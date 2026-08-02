@@ -1,0 +1,19 @@
+# Open Watcom toolchain (~128 MB download + extraction) — fetched by setup-toolchain.sh
+/watcom/
+/ow-c-linux-x64
+/ow-c-linux-x64.*
+
+# Build products and scratch
+/build/
+/out/
+/dostest/
+/dostest-run*/
+/dist/
+*.o
+*.obj
+*.obx
+*.exe
+!src/**/*.exe
+
+# macOS
+.DS_Store
