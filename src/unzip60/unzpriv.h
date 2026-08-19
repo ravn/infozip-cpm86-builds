@@ -2032,7 +2032,7 @@ typedef struct min_info {
     unsigned GPFIsUTF8: 1;   /* crec gen_purpose_flag UTF-8 bit 11 is set */
 #endif
 #ifndef SFX
-    char Far *cfilname;      /* central header version of filename */
+    char *cfilname;      /* near: CP/M-86 keeps it in DGROUP, no far heap */      /* central header version of filename */
 #endif
 } min_info;
 

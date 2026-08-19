@@ -24,7 +24,15 @@
 
 #define CRTL_CP_IS_OEM
 
+#ifndef __WATCOMC__
+/* Legacy FlexOS compilers had no usable far model, so the port historically
+ * neutralised the near/far qualifiers.  Open Watcom targeting CP/M-86 DOES
+ * have a real `far` keyword and a FAR_DATA segment/Extra group, which we rely
+ * on to push UnZip's ~22 KB of `Far` message strings out of the 64 KB DGROUP.
+ * Keeping the empty defines here would silently collapse every `Far` string
+ * back into DGROUP and re-overflow the small-model data segment. */
 #define near
 #define far
+#endif
 
 #endif /* !__flxcfg_h */

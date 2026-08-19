@@ -623,9 +623,9 @@ void free_G_buffers(__G)     /* releases all memory allocated in global vars */
 
 #ifndef SFX
     for (i = 0; i < DIR_BLKSIZ; i++) {
-        if (G.info[i].cfilname != (char Far *)NULL) {
+        if (G.info[i].cfilname != NULL) {
             zffree(G.info[i].cfilname);
-            G.info[i].cfilname = (char Far *)NULL;
+            G.info[i].cfilname = NULL;
         }
     }
 #endif

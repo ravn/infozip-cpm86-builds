@@ -35,14 +35,22 @@
 #                    helpers for MSC/Turbo; Watcom needs them pointed at the
 #                    plain near clib entry points.
 #
-# KNOWN LIMITATION (memory ceiling, honestly characterized):
-#   STORED entries extract with byte-correct content AND passing CRC.
-#   DEFLATE entries fail with "not enough memory to inflate": the 32 KB window +
-#   inflate's huft tables + UnZip's ~22 KB of Far message strings + globals +
-#   stack exceed the single 64 KB small-model DGROUP by a few KB. Fitting
-#   deflate would require moving the message strings to a far segment (compact
-#   model -- against the small-model/near-clib design) or stripping messages
-#   (a generic-source edit -- against this port's zero-edit rule). Left as-is.
+# DEFLATE STATUS (updated after the stack-overflow fix, 2026-08-20):
+#   STORED entries extract byte-correct with passing CRC. DEFLATE now also works
+#   byte-correct (CRC-verified) for outputs of ANY size, INCLUDING >= the 32 KB
+#   window: a wrapping window flush used to crash because the clib's 512-byte
+#   crt0 stack overflowed on UnZip's deep inflate call chain (fixed: crt0*.asm
+#   now defaults the stack to 2 KB; see the WC_STACK_BYTES comment there).
+#
+# RESIDUAL LIMITATION (memory ceiling, honestly characterized):
+#   Files whose DEFLATE stream needs large Huffman (huft) tables -- typically
+#   real prose with skewed symbol frequencies -- still fail GRACEFULLY with
+#   "not enough memory to inflate": the 32 KB window + those huft tables + the
+#   2 KB stack + UnZip's near globals/strings exceed the single 64 KB small-model
+#   DGROUP by a few KB. Synthetic/random inputs (uniform Huffman) fit and pass.
+#   Lifting this needs moving more near message strings out of DGROUP (extending
+#   the Far-string -> Extra-group work in flexos/flxcfg.h) or the medium/compact
+#   model -- a separate effort, not the >32 KB crash this build fixes.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
@@ -56,7 +64,7 @@ OWROOT="${OWROOT:-$(cd "$ROOT/../open-watcom-v2" 2>/dev/null && pwd || true)}"
 
 B="$OWROOT/bld"
 CLIB="$OWROOT/contrib/ravn/watcom-cpm86-libc"
-LIBDIR="$CLIB/build-lib"                 # holds clibcpm.lib + crt0.obj
+LIBDIR="${LIBDIR:-$CLIB/build-lib}"                 # holds clibcpm.lib + crt0.obj
 ENVSH="$OWROOT/contrib/ravn/cpm86-clib/env.sh"
 
 [ -f "$LIBDIR/clibcpm.lib" ] && [ -f "$LIBDIR/crt0.obj" ] || {
@@ -74,7 +82,7 @@ mkdir -p "$OUT"
 INC="-I$B/hdr/dos/h -I$B/clib/h -I$B/clib/intel/h -I$B/watcom/h -I$B/lib_misc/h"
 DEFS="-DFLEXOS -DMALLOC_WORK -DDYNALLOC_CRCTAB -DNO_ZIPINFO -DNO_DEFLATE64 \
 -DSMALL_MEM -DINBUFSIZ=512 \
--Dzfmalloc=malloc -Dzffree=free -Dzfstrcpy=strcpy -Dzfstrcmp=strcmp"
+-Dzfmalloc=malloc -Dzffree=free"
 CFLAGS="-bcpm86 -march=i186 -mcmodel=s -Os"
 
 # UnZip core objects for a NO_ZIPINFO build, plus the CP/M-86 OS layer.

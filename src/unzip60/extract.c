@@ -1226,7 +1226,7 @@ static int extract_or_test_entrylist(__G__ numchunk,
          * extra field, so that a UTF-8 entry name e.f. block has already
          * been processed.
          */
-        if (G.pInfo->cfilname != (char Far *)NULL) {
+        if (G.pInfo->cfilname != NULL) {
             if (zfstrcmp(G.pInfo->cfilname, G.filename) != 0) {
 #  ifdef SMALL_MEM
                 char *temp_cfilnam = slide + (7 * (WSIZE>>3));
@@ -1245,7 +1245,7 @@ static int extract_or_test_entrylist(__G__ numchunk,
                     error_in_archive = PK_WARN;
             }
             zffree(G.pInfo->cfilname);
-            G.pInfo->cfilname = (char Far *)NULL;
+            G.pInfo->cfilname = NULL;
         }
 #endif /* !SFX */
         /* Size consistency checks must come after reading in the local extra
