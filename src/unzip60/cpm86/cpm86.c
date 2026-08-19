@@ -609,3 +609,20 @@ void version(__G)
 /* This prevents the PORTLIB startup code from performing argument globbing */
 
 _wildarg() {}
+
+/**************************/
+/*  Function check_for_windows()  */
+/**************************/
+
+/* The DOS Watcom headers pulled in via -I.../hdr/dos/h define MSDOS, so
+   unzip.c compiles the "#if defined(MSDOS)" error-path call
+   check_for_windows("UnZip"). That helper lives in msdos/msdos.c (a generic
+   source we do NOT compile) and only warns a Windows user that the DOS build
+   crashed; on CP/M-86 there is no Windows, so provide a no-op here rather than
+   pull the whole DOS msdos.c. */
+
+void check_for_windows(app)
+    ZCONST char *app;
+{
+    (void)app;
+}
