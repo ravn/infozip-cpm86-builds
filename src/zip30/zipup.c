@@ -165,7 +165,11 @@ local zoff_t bzfilecompress OF((struct zlist far *z_entry, int *cmpr_method));
 #endif /* ?USE_ZLIB */
 #endif /* MMAP || BIG_MEM */
 #ifndef USE_ZLIB
+#ifdef CPM86_STORE_ONLY
+  ulg window_size = 0;
+#else
   extern ulg window_size;       /* size of said window */
+#endif
 
   unsigned (*read_buf) OF((char *buf, unsigned size)) = file_read;
   /* Current input function. Set to mem_read for in-memory compression */
@@ -699,6 +703,9 @@ struct zlist far *z;    /* zip entry to compress */
     m = STORE;
   if (m == BEST)
     m = DEFLATE;
+#ifdef CPM86_STORE_ONLY
+  m = STORE;
+#endif
 
   /* Do not create STORED files with extended local headers if the
    * input size is not known, because such files could not be extracted.
@@ -1418,6 +1425,10 @@ local zoff_t filecompress(z_entry, cmpr_method)
     struct zlist far *z_entry;
     int *cmpr_method;
 {
+#ifdef CPM86_STORE_ONLY
+    *cmpr_method = STORE;
+    return 0;
+#else
 #ifdef USE_ZLIB
     int err = Z_OK;
     unsigned mrk_cnt = 1;
@@ -1584,6 +1595,7 @@ local zoff_t filecompress(z_entry, cmpr_method)
     lm_init(level, &z_entry->flg);
     return deflate();
 #endif /* ?USE_ZLIB */
+#endif /* CPM86_STORE_ONLY */
 }
 
 #ifdef ZP_NEED_MEMCOMPR

@@ -98,18 +98,35 @@ Mirror unzip's 628-linjers `cpm86.c`. Linker-krævede symboler:
 - [ ] `-zc` holder CONST-strenge ude af DGROUP; verificér DGROUP < 64 KB i map'et.
 - [ ] Vinduesstørrelse: `NO_DEFLATE64`, `WSIZE=0x8000` (32 KB) som unzip.
 
-### M6 — `build-zip-cpm86.sh`
-- [ ] Nyt script (spejl af `build-cpm86.sh`): `-mcmodel=l -zc`, defines, OS-lag +
-      `match.c`, link `format cpm86 … cstartlm.obj … clibl.lib`, emit `ZIP.CMD`.
+### M6 — build scripts
+- [x] `build-zip-cpm86.sh`: Info-ZIP large-model build for emu2 experiments.
+- [x] `build-minizip-cpm86.sh`: MAME-egnet small-model STORE-only `ZIP.CMD`.
 
 ### M7 — Test
-- [ ] emu2 (kan nu fixups): `zip A.ZIP FILE.TXT` → verificér med host `unzip -t`
-- [ ] MAME rc759: endelig HW-kontrol
-- [ ] Round-trip: zip pakker → UNZIP.CMD udpakker → byte-identisk med original
+- [x] emu2: `zip A.ZIP FILE.TXT` → verificeret med host `unzip -t` + uafhængig Python `zipfile` inflate. **Stored (0%) og deflated (91–95%) begge byte-identiske** med originalen. exit=0, ingen crash/hang.
+- [x] MAME rc759: `ZIP FILE FILE.TXT` verificeret headless på rigtig MAME rc759
+      med raw B:-disk: skabte `FILE.ZIP`; host `unzip -t` + Python `zipfile`
+      læste `file.txt` byte-identisk. Interaktiv B:-disk
+      `mame/rc759_sw/B_zip.mfi` er opdateret med samme `ZIP.CMD`.
+- [x] Round-trip verificeret via **uafhængig host-inflater** (bryder cirkulær afhængighed jf. AGENTS.md "don't share the failure mode"). On-target CP/M `UNZIP.CMD` udpakker stored fint, men **deflated inflate fejler "not enough memory to inflate"** — dokumenteret PRE-EXISTING small-model-grænse i `build-cpm86.sh` (32 KB inflate-vindue + huft + stak + globals > 64 KB DGROUP); kræver large-model UnZip = separat indsats, ikke en zip-defekt.
+
+#### M7-fixes (near/far clib + deflate-hukommelse + MAME-loader)
+Fire blokerende fejl fundet og rettet/omgået for at få ZIP.CMD til at køre:
+1. **Startup near/far tail-call** (`port/cominit.c`): `__CommonInit` (far, crt0-kaldt) tail-call-JMP'ede ind i near `__InitFiles`, hvis near-`RET` ødelagde far-returnet → vild eksekvering → konsol-loop før `main`. Fix: `volatile` barriere mod tail-call + `_WCNEAR` på callee-externs (`#include "variety.h"`).
+2. **BDOS FCB-segment i large model** (`port/diskio.c`, `port/dirent.c`): `_bdos` sendte kun FCB-offset i DX; BDOS læser FCB på DS:DX, men i large-model (-ml, far data) flyder DS → `stat`/search læste tomt FCB-navn → "name not matched". Fix: ny `_fbdos(fn, void __far *fcb)` der sætter DS=FCB-segment (`es→ds`); brugt for ALLE FCB-bærende kald. Stack-lokale FCB'er samlet i én delt DGROUP-`bdos_fcb`.
+3. **DEFLATE 64 KB-allokeringer** (`build-zip-cpm86.sh`): 16-bit far heap kan ikke give en enkelt 64 KB-blok (`size_t`-loft 65535 + heapblk-header). `window=2*WSIZE` og `prev` var 64 KB med WSIZE=0x8000. Lav-memory Info-ZIP-profiler (`WSIZE=0x2000`, senere `0x1000` + `HASH_BITS=12`) virker under emu2, men er stadig for store til MAME CCP/M-loaderen.
+4. **MAME CCP/M-loadergrænse** (`src/minizip-cpm86/minizip.c`, `build-minizip-cpm86.sh`): rigtig MAME fejlede før `main` med `Concurrent Fejl: For lidt lager / Kommando = ZIP`, også for store-only Info-ZIP (183808 B). Den MAME-egnede `ZIP.CMD` er derfor en lille CP/M-native STORE-only ZIP writer (63520 B, small model, ingen Extra/farheap), med standard ZIP local/central directory, CRC32 og CP/M wildcard via `opendir/readdir`. Verificeret: emu2 single-file + wildcard (`*.TXT`) og MAME rc759 `ZIP FILE FILE.TXT`, alle med host `unzip -t` + Python `zipfile` byte-orakel.
+
+Byggekommandoer: Info-ZIP large-model eksperiment `./build-zip-cpm86.sh`; MAME-egnet ZIP.CMD `./build-minizip-cpm86.sh`. Large-model clib-gates: 9/9 PASS (ingen regression).
+
+#### M7-fix (wildcard-ekspansion `A:*.*` / `*.*`)
+CCP'en globber IKKE kommando-halen (i modsætning til DOS), så `ZIP A.ZIP *.*` nåede tidligere `wild()` som en litteral streng → SSTAT fejl → "name not matched". To rettelser:
+5. **`wild()` glob'er nu selv** (`src/zip30/cpm86/cpm86.c`): bruger clib'ens `opendir()`/`readdir()` til FCB-wildcard-match (drev-bogstav + `*`→`?`-fyld). Navnene **samles først** (closedir), DEREFTER kaldes `procname()` på hvert — fordi `procname→SSTAT` udsteder sin egen BDOS search-first der deler DMA/cursor med `readdir` (jf. dirent.c "tight opendir→readdir*→closedir loop"). Drev-præfiks `d:` genpåsættes hvert match (så `fopen` læser fra rette drev; `ex2in` strdrer det af til arkivnavnet).
+6. **`set_dma()` DMA-segment i large model** (`port/dirent.c`): satte DMA-segment til `_getds()`, men i large model er DGROUP **SS-baseret** og `dma[]` ligger i SS mens DS flyder → BDOS skrev matchede dir-sektorer til forkert segment → `readdir` læste tom `dma[]` (kun `readdir` ramtes; `stat`-eksistens tjekker kun AL-flag, ingen DMA-læsning). Fix: `_getss()`, DMA-segment = SS. Verificeret under emu2 + host-oracle: `*.*`, `A:*.*`, `*.TXT`, `FILE?.TXT` ekspanderer korrekt, arkiv byte-identisk (unzip -t + Python zipfile).
+7. **Farheap overlap med FAR_DATA** (`port/farheap.c`, spejlet i `bld/clib/_cpm/c/farheap.c`): emu2-core på hænget ved `f053.txt` viste guest `CS:IP=1065:9618`, dvs. `__MemAllocator+0x4e` i Watcom heap-list traversal. `cmd_check.py` viste `ZIP.CMD` havde Extra `G_LENGTH=G_MIN=424` (far data) + farheap, mens den gamle `__AllocSeg` carve'ede fra Extra paragraph 0 → heap metadata overskrev far data/free-list. Fix: far-data end-marker i `farheap.obj`; første heap-slab starter ved `ceil(marker+1)` (efter applikationens far data). `cmd_check.py --heap-starts-at-min --map out-zip-cpm86/ZIP.CMD` PASS. Verificeret på faktiske `mandel.img` A:-filer ekstraheret til emu2: `ZIP A A:*.*` → 76 entries, host `unzip -t` + Python `zipfile` OK.
 
 ## Åbne risici
-- **Large-model clib er uprøvet på CP/M-86** — M1b er den reelle nye risiko;
-  ingen `clibl`/`cstartlm` findes endnu. Alt andet er velforstået.
-- Large model + zip's dybe deflate-kaldekæde vs. stak (unzip krævede 2 KB stak).
-- CP/M-86-filsystem har ingen kataloger/symlinks/rige tidsstempler → `wild`,
-  `stamp`, `filetime` skal degradere pænt.
+- Info-ZIP large-model builden virker under emu2, men er for stor til MAME's
+  CCP/M-loader. Den MAME-egnede `ZIP.CMD` er derfor bevidst STORE-only.
+- CP/M-86-filsystem har ingen kataloger/symlinks/rige tidsstempler; minizip
+  skriver faste DOS-timestamps (1980-01-01) og arkivnavne uden drive-præfiks.

@@ -13,10 +13,11 @@
   needs with portable C + a few CP/M BDOS (INT 0E0h) calls.
 
   CP/M-86 realities that shape this layer:
-    * No directory enumeration (opendir/readdir) and the CCP does no globbing,
-      and BDOS Search First/Next match only '?' in an FCB (never '*'). So
-      wild() cannot expand a pattern against the disk -- every argument is
-      treated as a literal name (the documented fallback, as in UnZip's cpm86).
+    * The CCP does no command-tail globbing, and BDOS Search First/Next match
+      only '?' in an FCB (never '*').  wild() therefore expands patterns itself
+      via the clib's opendir()/readdir() seam (port/dirent.c), which maps a
+      "d:name.typ" pattern (with '*'/'?') to an FCB search and enumerates the
+      user area -- so `ZIP A.ZIP *.*` / `A:*.*` now work like the DOS port.
     * No sub-directories -> deletedir() is a no-op; procname() never recurses.
     * No reliable file timestamps in the base FCB -> stamp() is a no-op and
       filetime() returns a fixed/degraded time but a CORRECT size (Zip needs
@@ -28,6 +29,7 @@
 #include <malloc.h>             /* _fcalloc / _ffree (far heap) */
 #include <dos.h>                /* union REGS / struct SREGS / MK_FP */
 #include <time.h>
+#include <dirent.h>             /* opendir/readdir/closedir (clib port) for wild() */
 
 /* Per-port name-conversion constants (each Info-ZIP OS file defines its own,
    as in msdos/msdos.c). CP/M-86 uses '/' internally, no name padding. */
@@ -162,10 +164,93 @@ int procname(char *n, int caseflag)
     return newname(n, 0, caseflag);
 }
 
-/* wild: no OS-level globbing on CP/M-86 -> literal name (UnZip precedent). */
+/* wild: expand a CP/M path/pattern against the disk directory and process each
+   match.  Unlike DOS, the CP/M CCP does NOT glob the command tail, so a bare
+   `ZIP A.ZIP *.*` (or `A:*.*`) used to reach here literally, fail SSTAT, and
+   print "name not matched".  The clib's opendir()/readdir() (port/dirent.c) do
+   the CP/M FCB wildcard match -- drive letter parsing plus the '*'->'?'-fill
+   rule -- so we enumerate through them.
+
+   Two things to get right:
+     * readdir() yields the bare "NAME.EXT"; we re-attach any "d:" drive prefix
+       from the pattern so the later fopen() reads from that drive, and ex2in()
+       strips the "d:" back off for the stored (drive-less) archive name.
+       Worked example: wild("A:*.*") over a disk holding FILE.TXT, BIG.TXT ->
+       list = {"A:FILE.TXT","A:BIG.TXT"} -> procname adds each, archived as
+       file.txt / big.txt.
+     * All names MUST be collected BEFORE calling procname(): procname()->SSTAT()
+       issues its OWN BDOS search-first, which shares the single directory DMA
+       and search cursor with readdir() (see dirent.c's "tight opendir->readdir*
+       ->closedir loop, no intervening file I/O" warning).  Interleaving would
+       corrupt the in-flight scan and truncate/duplicate the match list.  So we
+       enumerate fully, closedir, THEN procname each collected name.
+
+   Return ZE_OK if at least one file matched and was queued, ZE_MISS if none
+   (so zip.c prints the standard "name not matched:" warning), or a hard error
+   (ZE_MEM) propagated from procname/allocation. */
 int wild(char *w)
 {
-    return procname(w, 0);
+    DIR            *dir;
+    struct dirent  *de;
+    char            prefix[3];
+    char          **list = NULL;
+    int             count = 0, cap = 0;
+    int             i, e = ZE_OK, any = 0;
+
+    if (w == NULL)
+        return ZE_MISS;
+    if (strcmp(w, "-") == 0)             /* stdin: never a pattern */
+        return procname(w, 0);
+
+    /* No wildcard metacharacter -> keep the literal path: a plain existing
+       filename, or a delete/freshen match expression handled by procname(). */
+    if (strchr(w, '*') == NULL && strchr(w, '?') == NULL)
+        return procname(w, 0);
+
+    /* Preserve an optional "d:" so each match reopens on the same drive. */
+    prefix[0] = '\0';
+    if (w[0] != '\0' && w[1] == ':') {
+        prefix[0] = w[0];
+        prefix[1] = ':';
+        prefix[2] = '\0';
+    }
+
+    dir = opendir(w);
+    if (dir == NULL)                     /* pattern maps to no CP/M name */
+        return procname(w, 0);           /* -> ZE_MISS + "name not matched" */
+
+    while ((de = readdir(dir)) != NULL) {
+        char *nm;
+        if (count == cap) {              /* grow the collected-name array */
+            int    ncap = cap ? cap * 2 : 16;
+            char **nl = realloc(list, (size_t)ncap * sizeof(char *));
+            if (nl == NULL) { closedir(dir); e = ZE_MEM; goto cleanup; }
+            list = nl;
+            cap = ncap;
+        }
+        nm = malloc(strlen(prefix) + strlen(de->d_name) + 1);
+        if (nm == NULL) { closedir(dir); e = ZE_MEM; goto cleanup; }
+        strcpy(nm, prefix);
+        strcat(nm, de->d_name);
+        list[count++] = nm;
+    }
+    closedir(dir);                       /* scan done: safe to hit BDOS again */
+
+    for (i = 0; i < count; i++) {
+        int r = procname(list[i], 0);
+        if (r == ZE_OK)
+            any = 1;
+        else if (r != ZE_MISS && e == ZE_OK)
+            e = r;                       /* propagate a hard error (e.g. ZE_MEM) */
+    }
+    if (e == ZE_OK && !any)
+        e = ZE_MISS;                     /* matched nothing -> "name not matched" */
+
+cleanup:
+    for (i = 0; i < count; i++)
+        free(list[i]);
+    free(list);
+    return e;
 }
 
 /* ------------------------------------------------------------------ */
@@ -227,17 +312,21 @@ int getch(void)
 }
 
 /* ------------------------------------------------------------------ */
-/* init_upper()'s MSDOS16 path calls intdosx() for INT21/AX=3800h (get  */
-/* country info) to obtain a case-mapping function for chars >=128. CP/M */
-/* has no such call; supply an identity mapper so extended chars pass    */
-/* through unchanged. casemap is the FIRST field of the country buffer   */
-/* at seg->ds:in->x.dx.                                                   */
+/* init_upper()'s MSDOS16 path calls intdosx() for INT21/AX=3800h (get      */
+/* country info) to obtain a case-mapping function for chars >=128. CP/M    */
+/* has no such call; supply an identity mapper so extended chars pass       */
+/* through unchanged. In the DOS country-info block the case-map FAR        */
+/* routine pointer sits at OFFSET 18 (util.c mirrors this: 18 ignored bytes */
+/* precede the `casemap` field), so we must store it there -- writing at    */
+/* offset 0 leaves casemap NULL and init_upper far-calls address 0.         */
+#define CINFO_CASEMAP_OFF 18
 static int __far cpm_identmap(int c) { return c; }
 
 int intdosx(const union REGS *in, union REGS *out, struct SREGS *seg)
 {
     void (__far * __far *casemap)(void);
-    casemap = (void (__far * __far *)(void))MK_FP(seg->ds, in->x.dx);
+    casemap = (void (__far * __far *)(void))
+                  MK_FP(seg->ds, in->x.dx + CINFO_CASEMAP_OFF);
     *casemap = (void (__far *)(void))cpm_identmap;
     if (out != in) *out = *in;
     return 0;

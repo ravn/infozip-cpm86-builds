@@ -2288,12 +2288,20 @@ char **argv;            /* command line tokens */
   recurse = 0;         /* 1=recurse into directories; 2=match filenames */
   dispose = 0;         /* 1=remove files after put in zip file */
   pathput = 1;         /* 1=store path with name */
+#ifdef CPM86_STORE_ONLY
+  method = STORE;      /* CP/M-86 MAME cannot load the full deflate build. */
+#else
   method = BEST;       /* one of BEST, DEFLATE (only), or STORE (only) */
+#endif
   dosify = 0;          /* 1=make new entries look like MSDOS */
   verbose = 0;         /* 1=report oddities in zip file structure */
   fix = 0;             /* 1=fix the zip file */
   adjust = 0;          /* 1=adjust offsets for sfx'd file (keep preamble) */
+#ifdef CPM86_STORE_ONLY
+  level = 0;
+#else
   level = 6;           /* 0=fastest compression, 9=best compression */
+#endif
   translate_eol = 0;   /* Translate end-of-line LF -> CR LF */
 #if defined(OS2) || defined(WIN32)
   use_longname_ea = 0; /* 1=use the .LONGNAME EA as the file's name */
@@ -5911,7 +5919,7 @@ char **argv;            /* command line tokens */
   /* Free some memory before spawning unzip */
 #ifdef USE_ZLIB
   zl_deflate_free();
-#else
+#elif !defined(CPM86_STORE_ONLY)
   lm_free();
 #endif
 #ifdef BZIP2_SUPPORT

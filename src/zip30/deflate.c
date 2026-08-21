@@ -85,14 +85,16 @@
  * is still correct, and might even be smaller in some cases.
  */
 
-#ifdef SMALL_MEM
-#   define HASH_BITS  13  /* Number of bits used to hash strings */
-#endif
-#ifdef MEDIUM_MEM
-#   define HASH_BITS  14
-#endif
 #ifndef HASH_BITS
-#   define HASH_BITS  15
+#  ifdef SMALL_MEM
+#    define HASH_BITS  13  /* Number of bits used to hash strings */
+#  endif
+#  ifdef MEDIUM_MEM
+#    define HASH_BITS  14
+#  endif
+#  ifndef HASH_BITS
+#    define HASH_BITS  15
+#  endif
    /* For portability to 16 bit machines, do not use values above 15. */
 #endif
 

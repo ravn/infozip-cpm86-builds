@@ -18,13 +18,13 @@
 #   * a -D configuration flag below.
 #
 # Key flags and WHY:
-#   -mcmodel=l -zm   LARGE model, per-function *_TEXT so wlink can span >64 KB
+#   -mcmodel=l -zc   LARGE model, per-function *_TEXT so wlink can span >64 KB
 #                    code across multiple CP/M-86 code groups (far calls).
 #   NO -zc           const-in-code BLOWS the code group past 64 KB and trips
 #                    E2052 (clib near relocations cross the boundary). Keep
 #                    CONST in DGROUP instead and shrink DGROUP another way:
-#   -DSMALL_MEM      halves the deflate near buffers (flag_buf etc.) -- the
-#   -DLIT_BUFSIZE=0x1000  ...together these bring DGROUP (CONST 38 KB + BSS +
+#   -DSMALL_MEM -DHASH_BITS=12      halves the deflate near buffers (flag_buf etc.) -- the
+#   -DLIT_BUFSIZE=0x0400  ...together these bring DGROUP (CONST 38 KB + BSS +
 #                    stack) from ~3.3 KB over 64 KB to comfortably under.
 #   -DDOS -DMSDOS    CP/M-86 is a DOS-family Watcom target; selects msdos/osdep.h
 #                    (which compiles clean under owcc) for the type/macro surface.
@@ -60,7 +60,7 @@ OUT="${OUT:-$ROOT/out-zip-cpm86}"
 mkdir -p "$OUT"
 
 INC="-I$B/hdr/dos/h -I$B/clib/h -I$B/clib/intel/h -I$B/watcom/h -I$B/lib_misc/h"
-DEFS="-DDOS -DMSDOS -DDYN_ALLOC -DNO_ASM -DSMALL_MEM -DLIT_BUFSIZE=0x1000"
+DEFS="-DDOS -DMSDOS -DDYN_ALLOC -DNO_ASM -DSMALL_MEM -DHASH_BITS=12 -DLIT_BUFSIZE=0x0400 -DWSIZE=0x1000"
 CFLAGS="-bcpm86 -march=i186 -mcmodel=l -zm -Os"
 
 # Zip.exe object set (from msdos/makefile.wat) minus the hand-asm match/crc
@@ -82,7 +82,7 @@ OBJS="$OBJS file $OUT/cpm86.obj"
 echo "==> linking ZIP.CMD"
 WLINK="$B/wl/osxa64/wlink.exe"
 # shellcheck disable=SC2086
-"$WLINK" format cpm86 op dosseg op start=_cstart_ op farheap=0x8000 \
+"$WLINK" format cpm86 op dosseg op start=_cstart_ op farheap=0x20000 \
   op map="$OUT/zip.map" \
   name "$OUT/ZIP.CMD" file "$LIBDIR/cstartlm.obj" $OBJS library "$LIBDIR/clibl.lib"
 
