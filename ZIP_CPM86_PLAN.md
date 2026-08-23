@@ -130,3 +130,39 @@ CCP'en globber IKKE kommando-halen (i modsætning til DOS), så `ZIP A.ZIP *.*` 
   CCP/M-loader. Den MAME-egnede `ZIP.CMD` er derfor bevidst STORE-only.
 - CP/M-86-filsystem har ingen kataloger/symlinks/rige tidsstempler; minizip
   skriver faste DOS-timestamps (1980-01-01) og arkivnavne uden drive-præfiks.
+
+## M8 — MAME breakthrough: full deflate zip LOADS + RUNS on real rc759 (2026-08-23)
+
+The full large-model deflate `ZIP.CMD` (199 KB) now **loads and executes on real
+MAME rc759** — the "For lidt lager" wall is broken.
+
+**TPA measured:** the CCP/M-86 3.1 boot banner reports `384 K bytes hoved lager`
+and **`293 K bytes bruger lager`** — so the transient program area is **293 KB**,
+far larger than the 126-183 KB earlier guessed.
+
+**Root cause of "For lidt lager" was the OVERSIZED far-heap reservation, not code
+size.** The CCP/M loader reserves the Extra group's G_MAX at load time:
+- `option farheap=0x20000` (128 K) -> image 199 K + 128 K = 327 K > 293 K -> REJECTED.
+- `option farheap=0xC000` (48 K)  -> 199 K + 48 K = 247 K < 293 K -> LOADS.
+Right-sized `build-zip-cpm86.sh` to `farheap=0xC000` (deflate's window+prev+head
+= ~24 K need only ~32 K min, measured on emu2). Verified on real MAME:
+`menu imenu` -> zip runs, prints `zip error: Nothing to do! (IMENU.zip)` at the
+`A>` prompt (LOADED, no "For lidt lager"). With a real command
+(`startup.0 = "menu A.ZIP T.TXT"`), zip starts and prints `adding: t.txt`.
+
+**REMAINING BUG (M9): far heap gets only G_MIN on real CCP/M, not G_MAX.** After
+`adding: t.txt`, real MAME zip fails `zip error: Out of memory (window
+allocation)`. The SAME binary (ZIP14.CMD, Extra `G_MAX=86 K`) deflates 87% fine
+under emu2. So it is neither the binary, the 293 K TPA, nor the farheap size
+(0xC000 and 0x14000 both fail identically on MAME). Diagnosis: the loader
+reserves G_MAX at load (that is why shrinking it fixed the LOAD), but the
+far-heap init reads the base-page Extra descriptor (DS:0x0C) which on real CCP/M
+reports the initialized size (G_MIN ~7 K, the program's far data) rather than the
+reserved G_MAX. So `__AllocSeg` thinks the Extra group is ~7 K and the 8 K window
+alloc fails. emu2/unicorn hand back the full G_MAX, hiding this.
+
+Fix direction: on CCP/M, obtain far heap memory via the OS at runtime (BDOS
+M_ALLOC, fn 128/129 — "get max memory") instead of trusting the loader to have
+pre-granted G_MAX in the Extra group; or read the actually-granted Extra size
+from the correct base-page field. This is a `port/farheap.c` change, bounded and
+specific. Once done, the full deflate zip should complete on real rc759.
