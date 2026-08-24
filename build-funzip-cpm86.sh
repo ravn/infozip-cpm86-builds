@@ -68,21 +68,23 @@ for s in $SRCS; do
   owcc $CFLAGS $DEFS $INC -c "$s.c" -o "$OUT/${s}f.obj"
   OBJS="$OBJS file $OUT/${s}f.obj"
 done
-# CP/M-86 OS layer: compile WITHOUT -DFUNZIP so cpm86.c sees the full Globals
-# struct (mapname/checkdir fields).  funzip never calls those OS functions --
-# they are dead code -- but cpm86.c still references the fields at compile time.
-# Keeping -DFLEXOS selects the right OS profile; removing -DFUNZIP keeps the
-# struct members intact so the compiler does not emit E1031 "not found" errors.
-DEFS_CPM86="${DEFS/-DFUNZIP/}"   # strip -DFUNZIP from cpm86.c compile only
+# Minimal CP/M-86 OS layer for funzip: provides fdopen(0/1) and getch().
+# We do NOT compile the full unzip cpm86.c here because -DMSDOS pulls in
+# msdos/doscfg.h which enables far-string machinery (fnfilter, fLoadFarString,
+# _CompiledWith) that requires fileio.c/process.c -- absent in funzip.
 # shellcheck disable=SC2086
-owcc $CFLAGS $DEFS_CPM86 $INC -c cpm86/cpm86.c -o "$OUT/cpm86f.obj"
+owcc $CFLAGS $INC -c cpm86/cpm86_funzip.c -o "$OUT/cpm86f.obj"
 OBJS="$OBJS file $OUT/cpm86f.obj"
+
+# After env.sh, set LIBDIR + use same proven linker pattern as UTIL utilities:
+# cstartcpm.obj (defines _small_code_) + op nodefaultlibs + clibs.lib.
+LIBDIR="$OWROOT/lib286/cpm86"
 
 echo "==> linking FUNZIP.CMD"
 WLINK="$B/wl/osxa64/wlink.exe"
 # shellcheck disable=SC2086
 "$WLINK" format cpm86 op dosseg,nodefaultlibs \
-  file "$LIBDIR/crt0.obj" $OBJS library "$LIBDIR/clibcpm.lib" \
+  file "$LIBDIR/cstartcpm.obj" $OBJS library "$LIBDIR/clibs.lib" \
   name "$OUT/FUNZIP.CMD"
 
 cp "$OUT/FUNZIP.CMD" "$ROOT/FUNZIP.CMD"
