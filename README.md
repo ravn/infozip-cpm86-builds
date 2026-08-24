@@ -60,6 +60,10 @@ Every executable is checked to be a genuine real-mode `MZ` image with no protect
 
 `test-dos.sh` runs this end to end.
 
+The separate CP/M-86 investigation and its current deflate-only divergence
+status are documented in
+[`ZIP_DEFLATE_DIVERGENCE_2026-08-25.md`](ZIP_DEFLATE_DIVERGENCE_2026-08-25.md).
+
 ### Testing status
 
 Being explicit about what is and isn't covered, since these binaries are meant to be trusted by strangers:
