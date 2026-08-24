@@ -67,7 +67,17 @@ CFLAGS="-bcpm86 -march=i186 -mcmodel=l -zm -Os"
 # (C versions used via NO_ASM) and minus msdos.c (replaced by cpm86/cpm86.c).
 CORE="zip crypt ttyio zipfile zipup util fileio deflate trees globals crc32"
 
-echo "==> compiling Zip for CP/M-86 (large model)"
+# farheap right-sized: with SMALL_MEM/WSIZE=0x1000/HASH_BITS=12 the deflate far
+# tables are window 8K + prev 8K + head 8K = ~24K; the far heap only needs to
+# cover those plus a little slack. 0x20000 (128K) was ~4x oversized -- the loader
+# must reserve the whole Extra G_MAX, so an oversized farheap directly inflates
+# the load-time footprint that trips the CCP/M "For lidt lager" ceiling. Measured
+# minimum that still deflates cleanly under emu2 is 0x8000 (0x6000 fails); use
+# 0xC000 (48K) for margin -> ~80K less load-time reservation than 0x20000.
+: "${FARHEAP:=0xC000}"
+FARHEAP_PARAS=$(( FARHEAP / 16 ))
+
+echo "==> compiling Zip for CP/M-86 (large model, farheap=${FARHEAP} = ${FARHEAP_PARAS} paras)"
 cd "$ROOT/src/zip30"
 OBJS=""
 for s in $CORE; do
@@ -79,17 +89,24 @@ done
 owcc $CFLAGS $DEFS $INC -c cpm86/cpm86.c -o "$OUT/cpm86.obj"
 OBJS="$OBJS file $OUT/cpm86.obj"
 
+# M9 fix: real CCP/M-86's loader (load.sup init_base) writes G_MIN (the
+# initialized far-data paragraphs) to DS:0x0C, NOT G_MAX (G_MIN + farheap).
+# farheap.c's __cpm86_fh_init() reads DS:0x0C and computes total_paras, so
+# on real hardware it sees G_MIN ≈ data_paras and concludes available_paras=0.
+# Fix: compile farheap.c with -DCPM86_FARHEAP_PARAS=N so __AllocSeg derives
+# total_paras = marker_paras + N (where N = farheap/16), correctly reflecting
+# the full G_MAX reservation. This farheap.obj is linked BEFORE clibl.lib so
+# it overrides the library's fallback version (which still uses DS:0x0C).
+PORTDIR="$OWROOT/contrib/ravn/watcom-cpm86-libc/port"
+PORTINC="-I$OWROOT/bld/clib/h -I$OWROOT/bld/clib/heap/h"
+# shellcheck disable=SC2086
+owcc $CFLAGS $INC $PORTINC -DCPM86_FARHEAP_PARAS=$FARHEAP_PARAS \
+  -c "$PORTDIR/farheap.c" -o "$OUT/farheap.obj"
+OBJS="$OBJS file $OUT/farheap.obj"
+
 echo "==> linking ZIP.CMD"
 WLINK="$B/wl/osxa64/wlink.exe"
 # shellcheck disable=SC2086
-# farheap right-sized: with SMALL_MEM/WSIZE=0x1000/HASH_BITS=12 the deflate far
-# tables are window 8K + prev 8K + head 8K = ~24K; the far heap only needs to
-# cover those plus a little slack. 0x20000 (128K) was ~4x oversized -- the loader
-# must reserve the whole Extra G_MAX, so an oversized farheap directly inflates
-# the load-time footprint that trips the CCP/M "For lidt lager" ceiling. Measured
-# minimum that still deflates cleanly under emu2 is 0x8000 (0x6000 fails); use
-# 0xC000 (48K) for margin -> ~80K less load-time reservation than 0x20000.
-: "${FARHEAP:=0xC000}"
 "$WLINK" format cpm86 op dosseg op start=_cstart_ op farheap=$FARHEAP \
   op map="$OUT/zip.map" \
   name "$OUT/ZIP.CMD" file "$LIBDIR/cstartlm.obj" $OBJS library "$LIBDIR/clibl.lib"
