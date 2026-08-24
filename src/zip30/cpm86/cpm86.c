@@ -390,11 +390,11 @@ int intdosx(const union REGS *in, union REGS *out, struct SREGS *seg)
 
 /* ------------------------------------------------------------------ */
 /* mktemp: Info-ZIP always passes template "ziXXXXXX" (2-char prefix +
- * 6 trailing X's = 8 chars total).  The clibs.lib mktemp on CP/M-86
- * returns "" (cannot create the file atomically), so we provide our own
- * that simply replaces the trailing X's with a 6-digit hex timestamp.
- * Result: "zi1a2b3c" -- 8 chars, no extension, valid CP/M 8.3 name.
- * Linked before clibs.lib so this definition shadows the library's. */
+ * 6 trailing X's, 8 chars total; tempname() allocates 12 bytes).
+ * The clibs.lib mktemp on CP/M-86 returns "" so we provide our own.
+ * We replace the X's with a 4-digit hex timestamp and append ".TMP"
+ * so temp files are easy to clean up with  ERA *.TMP  after a crash.
+ * "zi" + "1234" + ".TMP" = 10 chars + NUL = 11 bytes <= buffer(12). */
 char *mktemp(char *t)
 {
     char         *p;
@@ -404,7 +404,7 @@ char *mktemp(char *t)
     p = t + strlen(t);
     while (p > t && *(p-1) == 'X') p--;
     n = (unsigned long)time(NULL);
-    sprintf(p, "%06lx", n & 0xFFFFFFUL);  /* 6 hex digits, no overflow */
+    sprintf(p, "%04lx.TMP", n & 0xFFFFUL);
     return t;
 }
 
