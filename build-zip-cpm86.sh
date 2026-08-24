@@ -79,15 +79,20 @@ FARHEAP_PARAS=$(( FARHEAP / 16 ))
 
 echo "==> compiling Zip for CP/M-86 (large model, farheap=${FARHEAP} = ${FARHEAP_PARAS} paras)"
 cd "$ROOT/src/zip30"
-OBJS=""
+
+# Compile cpm86.c FIRST so its tempname() definition shadows fileio.c's
+# broken NO_MKTEMP version (msdos/osdep.h defines NO_MKTEMP which causes
+# a buffer overflow: 12-byte malloc + 8-digit sprintf = heap corruption).
+# wlink uses the first definition of a public symbol; cpm86.obj must precede
+# fileio.obj in the link order for our tempname() to win.
+owcc $CFLAGS $DEFS $INC -c cpm86/cpm86.c -o "$OUT/cpm86.obj"
+OBJS="file $OUT/cpm86.obj"
+
 for s in $CORE; do
   # shellcheck disable=SC2086
   owcc $CFLAGS $DEFS $INC -c "$s.c" -o "$OUT/$s.obj"
   OBJS="$OBJS file $OUT/$s.obj"
 done
-# The CP/M-86 OS layer (replaces msdos.c).
-owcc $CFLAGS $DEFS $INC -c cpm86/cpm86.c -o "$OUT/cpm86.obj"
-OBJS="$OBJS file $OUT/cpm86.obj"
 
 # M9 fix: real CCP/M-86's loader (load.sup init_base) writes G_MIN (the
 # initialized far-data paragraphs) to DS:0x0C, NOT G_MAX (G_MIN + farheap).

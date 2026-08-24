@@ -389,6 +389,29 @@ int intdosx(const union REGS *in, union REGS *out, struct SREGS *seg)
 }
 
 /* ------------------------------------------------------------------ */
+/* tempname: CP/M-86 override of fileio.c's tempname().
+ * msdos/osdep.h defines NO_MKTEMP so fileio.c's tempname() takes the
+ * #ifdef NO_MKTEMP path which does sprintf("%08lx", ...) writing 8 hex digits
+ * AFTER the "ziXXXXXX" template (positions 8..15 in a 12-byte malloc buffer =
+ * 5-byte overflow, corrupting the far-heap block trailer on real CCP/M-86).
+ * This replacement generates "zi%04x.TMP" (10 chars) which fits in 12 bytes
+ * and is a valid CP/M 8.3 filename. cpm86.obj is linked BEFORE fileio.obj
+ * (build-zip-cpm86.sh) so this definition shadows fileio.c's broken version. */
+char *tempname(char *zip)
+{
+    /* msdos/osdep.h defines NO_MKTEMP which causes fileio.c's tempname()
+     * to use sprintf("%08lx",...) writing 17 bytes into a 12-byte malloc --
+     * heap corruption on real CCP/M-86.  This shim delegates to Watcom's
+     * own tmpnam() which generates "TMPnnnnn.$$$" (valid 8.3, correct size).
+     * Linked before fileio.obj so this definition takes precedence. */
+    char *t;
+    (void)zip;
+    if ((t = (char *)malloc(L_tmpnam)) == NULL)
+        return NULL;
+    if (tmpnam(t) == NULL) { free(t); return NULL; }
+    return t;
+}
+
 /* mktemp: Info-ZIP always passes template "ziXXXXXX" (2-char prefix +
  * 6 trailing X's, 8 chars total; tempname() allocates 12 bytes).
  * The clibs.lib mktemp on CP/M-86 returns "" so we provide our own.
