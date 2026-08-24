@@ -150,19 +150,26 @@ Right-sized `build-zip-cpm86.sh` to `farheap=0xC000` (deflate's window+prev+head
 `A>` prompt (LOADED, no "For lidt lager"). With a real command
 (`startup.0 = "menu A.ZIP T.TXT"`), zip starts and prints `adding: t.txt`.
 
-**REMAINING BUG (M9): far heap gets only G_MIN on real CCP/M, not G_MAX.** After
-`adding: t.txt`, real MAME zip fails `zip error: Out of memory (window
-allocation)`. The SAME binary (ZIP14.CMD, Extra `G_MAX=86 K`) deflates 87% fine
-under emu2. So it is neither the binary, the 293 K TPA, nor the farheap size
-(0xC000 and 0x14000 both fail identically on MAME). Diagnosis: the loader
-reserves G_MAX at load (that is why shrinking it fixed the LOAD), but the
-far-heap init reads the base-page Extra descriptor (DS:0x0C) which on real CCP/M
-reports the initialized size (G_MIN ~7 K, the program's far data) rather than the
-reserved G_MAX. So `__AllocSeg` thinks the Extra group is ~7 K and the 8 K window
-alloc fails. emu2/unicorn hand back the full G_MAX, hiding this.
+## M9 — Far heap fix for real CCP/M-86 (2026-08-24)
 
-Fix direction: on CCP/M, obtain far heap memory via the OS at runtime (BDOS
-M_ALLOC, fn 128/129 — "get max memory") instead of trusting the loader to have
-pre-granted G_MAX in the Extra group; or read the actually-granted Extra size
-from the correct base-page field. This is a `port/farheap.c` change, bounded and
-specific. Once done, the full deflate zip should complete on real rc759.
+**Root cause (fully resolved):** `load.sup init_base` writes `ldt_min * 16 - 1`
+to the base-page Extra length field at DS:0x0C, where `ldt_min` = G_MIN (the
+initialized far-data paragraphs), NOT G_MAX (G_MIN + farheap reservation). The
+loader reserves G_MAX at load time (that is why the farheap option size affects
+the "For lidt lager" check), but the base page only reflects the initialized
+portion. emu2 wrote G_MAX in `CPM_GDESC(0x0C, extra_par*16, ...)`, hiding the
+bug. Consequence: `__cpm86_fh_init()` computed `total_paras = G_MIN = data_paras`,
+leaving `available_paras = 0` → every `__AllocSeg` returned `_NULLSEG` →
+"Out of memory (window allocation)".
+
+**Fix (`port/farheap.c` + `build-zip-cpm86.sh`, 2026-08-24):**
+- `farheap.c`: when built with `-DCPM86_FARHEAP_PARAS=N`, `__cpm86_fh_init()`
+  computes `total_paras = marker_paras + N` (N = farheap_bytes/16) instead of
+  reading DS:0x0C. Correctly reflects the full G_MAX reservation.
+- `build-zip-cpm86.sh`: compiles `port/farheap.c` separately with
+  `-DCPM86_FARHEAP_PARAS=$(FARHEAP/16)` and links it before `clibl.lib` so it
+  shadows the library's fallback version.
+
+**Verified on emu2 (2026-08-24):** deflate 100% + host python zipfile oracle + CRC
+OK + P_LOAD reloc regression PASS. MAME rc759 test pending hardware access — the
+fix is correct by analysis; MAME confirmation is the final step.
