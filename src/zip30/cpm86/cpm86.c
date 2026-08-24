@@ -26,7 +26,9 @@
 */
 
 #include "../zip.h"
-#include <malloc.h>             /* _fcalloc / _ffree (far heap) */
+#ifndef UTIL
+#  include <malloc.h>           /* _fcalloc / _ffree (far heap, large model only) */
+#endif
 #include <dos.h>                /* union REGS / struct SREGS / MK_FP */
 #include <time.h>
 #include <dirent.h>             /* opendir/readdir/closedir (clib port) for wild() */
@@ -38,10 +40,11 @@
 
 /* ------------------------------------------------------------------ */
 /* Far-heap allocator for the deflate window/prev/head (DYN_ALLOC).   */
-/* -ml defines __BIG_DATA__, so the clib far heap (_fcalloc/_ffree,    */
-/* reserved by the linker's OPTION FARHEAP) backs these.              */
-/* NOTE (M5): a single 2*WSIZE==64K request wraps 16-bit size_t; keep  */
-/* WSIZE<=0x4000 (or split) so items*size stays < 64K. Revisit in M5.  */
+/* Only needed in the full (non-UTIL) large-model build that uses      */
+/* DYN_ALLOC: UTIL-mode programs (zipcloak/zipnote/zipsplit) never     */
+/* compress, so zcalloc/zcfree are dead code and _fcalloc/_ffree       */
+/* (large-model clib only) must not be referenced.                    */
+#ifndef UTIL
 zvoid far *zcalloc(unsigned int items, unsigned int size)
 {
     return (zvoid far *)_fcalloc(items, size);
@@ -51,6 +54,44 @@ zvoid zcfree(zvoid far *ptr)
 {
     _ffree((void __far *)ptr);
 }
+#endif /* !UTIL */
+
+/* ------------------------------------------------------------------ */
+/* last(), dostime(), unix2dostime() -- in fileio.c but inside the     */
+/* #ifndef UTIL guard (lines 78-1133), so they are absent in UTIL-mode */
+/* object files.  Provide them here so filetime() and ex2in() link.   */
+#ifdef UTIL
+
+char *last(char *p, int c)
+{
+    char *t;
+    if ((t = strrchr(p, c)) != NULL)
+        return t + 1;
+    return p;
+}
+
+static ulg dostime(int y, int n, int d, int h, int m, int s)
+{
+    return y < 1980 ? DOSTIME_MINIMUM :
+           (((ulg)y - 1980) << 25) | ((ulg)n << 21) | ((ulg)d << 16) |
+           ((ulg)h << 11) | ((ulg)m << 5) | ((ulg)s >> 1);
+}
+
+ulg unix2dostime(time_t *t)
+{
+    time_t t_even;
+    struct tm *s;
+    t_even = (time_t)(((unsigned long)(*t) + 1) & (~1));
+    s = localtime(&t_even);
+    if (s == (struct tm *)NULL) {
+        t_even = (time_t)(((unsigned long)time(NULL) + 1) & (~1));
+        s = localtime(&t_even);
+    }
+    return dostime(s->tm_year + 1900, s->tm_mon + 1, s->tm_mday,
+                   s->tm_hour, s->tm_min, s->tm_sec);
+}
+
+#endif /* UTIL */
 
 /* ------------------------------------------------------------------ */
 /* stat_bandaid: Zip's stat() shim (SSTAT in msdos/osdep.h). The clib  */
@@ -124,6 +165,13 @@ char *in2ex(char *n)
     strcpy(x, n);
     return x;
 }
+
+/* procname and wild are only needed when adding new files to an archive (the
+   full ZIP build).  UTIL-mode utilities (zipcloak/zipnote/zipsplit) only read
+   or re-encrypt existing entries and never call these, so exclude them to avoid
+   undefined references to newname/filter/dosmatch (which live in zip.c, not in
+   the UTIL link set). */
+#ifndef UTIL
 
 /* ------------------------------------------------------------------ */
 /* procname: process one command-line name (add file, or match names  */
@@ -253,6 +301,8 @@ cleanup:
     return e;
 }
 
+#endif /* !UTIL */
+
 /* ------------------------------------------------------------------ */
 /* Timestamp / directory / extra-field: degrade gracefully.           */
 void stamp(char *f, ulg d)
@@ -289,8 +339,14 @@ void version_local(void)
 #else
     strcpy(buf, "an unknown compiler");
 #endif
-    printf("Compiled with %s for CP/M-86 (Intel 8086/80186, large model).\n\n",
-           buf);
+    printf("Compiled with %s for CP/M-86 (Intel 8086/80186, %s model).\n\n",
+           buf,
+#ifdef UTIL
+           "small"
+#else
+           "large"
+#endif
+           );
 }
 
 /* ------------------------------------------------------------------ */
@@ -330,6 +386,26 @@ int intdosx(const union REGS *in, union REGS *out, struct SREGS *seg)
     *casemap = (void (__far *)(void))cpm_identmap;
     if (out != in) *out = *in;
     return 0;
+}
+
+/* ------------------------------------------------------------------ */
+/* mktemp: Info-ZIP always passes template "ziXXXXXX" (2-char prefix +
+ * 6 trailing X's = 8 chars total).  The clibs.lib mktemp on CP/M-86
+ * returns "" (cannot create the file atomically), so we provide our own
+ * that simply replaces the trailing X's with a 6-digit hex timestamp.
+ * Result: "zi1a2b3c" -- 8 chars, no extension, valid CP/M 8.3 name.
+ * Linked before clibs.lib so this definition shadows the library's. */
+char *mktemp(char *t)
+{
+    char         *p;
+    unsigned long n;
+
+    if (t == NULL) return NULL;
+    p = t + strlen(t);
+    while (p > t && *(p-1) == 'X') p--;
+    n = (unsigned long)time(NULL);
+    sprintf(p, "%06lx", n & 0xFFFFFFUL);  /* 6 hex digits, no overflow */
+    return t;
 }
 
 /* ------------------------------------------------------------------ */
