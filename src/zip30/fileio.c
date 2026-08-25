@@ -1578,6 +1578,9 @@ int bfcopy(n)
 
    Return an error code in the ZE_ class. */
 {
+#ifdef CPM86_CREATE_ONLY
+  (void)n; return ZE_LOGIC;   /* create-only: byte-copy path removed */
+#else
   char *b;              /* malloc'ed buffer for copying */
   extent k;             /* result of fread() */
   uzoff_t m;            /* bytes copied so far */
@@ -1924,6 +1927,7 @@ int bfcopy(n)
   }
   free((zvoid *)b);
   return ZE_OK;
+#endif /* !CPM86_CREATE_ONLY */
 }
 
 
@@ -2033,6 +2037,9 @@ register unsigned int len;
 int ask_for_split_read_path(current_disk)
   ulg current_disk;
 {
+#ifdef CPM86_CREATE_ONLY
+  (void)current_disk; return ZE_OK;   /* create-only: split-read removed */
+#else
   FILE *f;
   int is_readable = 0;
   int i;
@@ -2266,6 +2273,7 @@ int ask_for_split_read_path(current_disk)
   free(split_name);
 
   return ZE_OK;
+#endif /* !CPM86_CREATE_ONLY */
 }
 
 
@@ -2279,6 +2287,9 @@ int ask_for_split_read_path(current_disk)
 int ask_for_split_write_path(current_disk)
   ulg current_disk;
 {
+#ifdef CPM86_CREATE_ONLY
+  (void)current_disk; return 0;   /* create-only: split-write removed */
+#else
   unsigned int num = (unsigned int)current_disk + 1;
   int i;
   char *split_dir = NULL;
@@ -2403,6 +2414,7 @@ int ask_for_split_write_path(current_disk)
 
   /* for now no way out except Ctrl C */
   return 1;
+#endif /* !CPM86_CREATE_ONLY */
 }
 
 

@@ -3191,6 +3191,9 @@ local int scanzipf_fixnew()
    Return an error code in the ZE_ class.
 */
 {
+#ifdef CPM86_CREATE_ONLY
+  return ZE_OK;   /* create-only: archive-repair (-FF) scanner removed */
+#else
   /* This function only reads the standard End-of-CentralDir record and the
      standard CentralDir-Entry records directly.  To conserve stack space,
      only a buffer of minimal size is declared.
@@ -3951,6 +3954,7 @@ local int scanzipf_fixnew()
 
   return ZE_OK;
 
+#endif /* !CPM86_CREATE_ONLY */
 } /* end of function scanzipf_fixnew() */
 
 #endif /* !UTIL */
@@ -3993,6 +3997,9 @@ local int scanzipf_regnew()
    Return an error code in the ZE_ class.
 */
 {
+#ifdef CPM86_CREATE_ONLY
+  return ZE_OK;   /* create-only: existing-archive reader removed (fresh create only) */
+#else
   /* In this function, a local buffer is used to read in the following Zip
      structures:
       End-of-CentralDir record (EOCDR) (ENDHEAD)
@@ -5083,6 +5090,7 @@ local int scanzipf_regnew()
 
   return ZE_OK;
 
+#endif /* !CPM86_CREATE_ONLY */
 } /* end of function scanzipf_regnew() */
 
 
@@ -6010,6 +6018,9 @@ int zipcopy(z)
 /* If fix == 2, assume in_file is pointing to a local header and fill
    in z from local header */
 {
+#ifdef CPM86_CREATE_ONLY
+  (void)z; return ZE_LOGIC;   /* create-only: entry-copy path removed */
+#else
   uzoff_t n;            /* holds local header offset */
   ulg e = 0;            /* extended local header size */
   ulg start_disk = 0;
@@ -6533,6 +6544,7 @@ int zipcopy(z)
   }
 
   return r;
+#endif /* !CPM86_CREATE_ONLY */
 }
 
 
