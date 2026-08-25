@@ -46,6 +46,10 @@ Free = fn 130.
    cleanly reports `zip error: Out of memory (window allocation)` (ZE_MEM) when the
    grant is too small. Hang → honest OOM. This is the correctness win.
 
+## Forward plan + tracking issues (2026-08-25)
+Phased plan for reaching full-deflate on MAME: `PLAN_zip_deflate_mame_2026-08-25.md`.
+Deflate divergence tracked as ravn/infozip-cpm86-builds#5; MAME regression gate #3.
+
 ## What REMAINS (for Copilot)
 The MAME run still OOMs because two things still starve the runtime grant:
 1. **`OPTION FARHEAP` still reserves memory the BDOS-128 path no longer uses.**
