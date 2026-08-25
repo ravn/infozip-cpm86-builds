@@ -4187,6 +4187,43 @@ local unsigned long get_shortopt(args, argnum, optchar, negated, value,
  * Parameters same as for get_shortopt.
  */
 
+#if defined(CPM86_SLIM) || defined(CPM86_CREATE_ONLY)
+/* CP/M-86's CCP folds the command line to UPPER-case before a transient program
+   sees it (MAME-verified; see CCPM86_COMMAND_LINE_CASE_2026-08-25.md), so long
+   option names arrive upper-cased.  Match them case-insensitively so --delete,
+   --DELETE, --Test etc. all work -- the reliable way to reach zip's case-distinct
+   short-option pairs (-d/-D, -t/-T, ...) on CP/M.  ASCII-only fold. */
+local int cpm86_ci_strcmp(a, b)
+  ZCONST char *a; ZCONST char *b;
+{
+  unsigned char ca, cb;
+  do {
+    ca = (unsigned char)*a++;  cb = (unsigned char)*b++;
+    if (ca >= 'A' && ca <= 'Z') ca += 'a' - 'A';
+    if (cb >= 'A' && cb <= 'Z') cb += 'a' - 'A';
+  } while (ca && ca == cb);
+  return (int)ca - (int)cb;
+}
+local int cpm86_ci_strncmp(a, b, n)
+  ZCONST char *a; ZCONST char *b; extent n;
+{
+  unsigned char ca, cb;
+  while (n--) {
+    ca = (unsigned char)*a++;  cb = (unsigned char)*b++;
+    if (ca >= 'A' && ca <= 'Z') ca += 'a' - 'A';
+    if (cb >= 'A' && cb <= 'Z') cb += 'a' - 'A';
+    if (ca != cb) return (int)ca - (int)cb;
+    if (ca == 0) break;
+  }
+  return 0;
+}
+#  define ZIP_LOPT_CMP(a,b)     cpm86_ci_strcmp((a),(b))
+#  define ZIP_LOPT_NCMP(a,b,n)  cpm86_ci_strncmp((a),(b),(n))
+#else
+#  define ZIP_LOPT_CMP(a,b)     strcmp((a),(b))
+#  define ZIP_LOPT_NCMP(a,b,n)  strncmp((a),(b),(n))
+#endif
+
 local unsigned long get_longopt(args, argnum, optchar, negated, value,
                                 option_num, depth)
   char **args;
@@ -4246,12 +4283,12 @@ local unsigned long get_longopt(args, argnum, optchar, negated, value,
 
   /* look for long option match */
   for (op = 0; options[op].option_ID; op++) {
-    if (options[op].longopt && strcmp(options[op].longopt, longopt) == 0) {
+    if (options[op].longopt && ZIP_LOPT_CMP(options[op].longopt, longopt) == 0) {
       /* exact match */
       match = op;
       break;
     }
-    if (options[op].longopt && strncmp(options[op].longopt, longopt, strlen(longopt)) == 0) {
+    if (options[op].longopt && ZIP_LOPT_NCMP(options[op].longopt, longopt, strlen(longopt)) == 0) {
       if (match > -1) {
         sprintf(optionerrbuf, long_op_ambig_err, longopt);
         free(arg);
