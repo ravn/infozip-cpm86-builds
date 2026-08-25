@@ -75,8 +75,65 @@ The MAME run still OOMs because two things still starve the runtime grant:
 - DEBUG build recipe: `build-zip-debug.sh` (DEBUG only in deflate.c+zipup.c, `-zt64`).
 - Build knobs: `EXTRA_DEFS`, `FARHEAP`, `-DLIT_BUFSIZE=0x0200` (DGROUP is at the 64 KB edge — expect E2021 and trim).
 
+### Latest verification (2026-08-25)
+
+With `FARHEAP=0` and a fresh build, real MAME now reaches and completes the
+deflate phase; it no longer reports the earlier `window allocation` failure or
+hang. The run then fails while writing the temporary archive (`zipcopy`), because
+the turnkey A: image has insufficient directory/data space for both the 200 KB
+`ZIP.CMD` and the temporary output. The autorun script now clears persisted
+rc759 NVRAM and removes additional optional A: files before installing ZIP.
+
+### BDOS-128 contract deep-check (2026-08-25, DONE)
+
+The BDOS interface was re-verified independently of ZIP with a strengthened
+`test/memtest128.c`:
+- variable requests with **min<max** (`min={1,4,16,64}`, `max={4,16,64,1024}`)
+- validation of `BX`, `start`, and returned `max` (`min <= max <= requested`)
+- full write/read sweep of each granted block
+
+On real MAME rc759 this reports `pass=4 fail=0`. A full RAM dump is then
+validated by `test/verify_memtest128_dump.py`, which confirms all expected
+byte-pattern blocks are present. Conclusion: BDOS 128/130 contract and segment
+addressing behave correctly; current ZIP failure is no longer a plausible
+BDOS-grant/corruption interface bug.
+
 ## Key files
 - `port/farheap.c` (the fix), `test/memtest128.c` (fn128 probe), `test/deflate_fheap_test.c` (unit probe), `build-deflate-fheap-mame.sh`.
+- `test/verify_memtest128_dump.py` (independent RAM-dump oracle for variable memtest128 patterns).
 - emu2: `emu2-cpm86/src/{cpm86.c,loader.c,loader.h}`.
 - Scripts: `scripts/rc759_zip_autorun.sh`, `rc759_zip_stream_diff.sh`, `_zip_decode_diff.py`; luas `scratch/zip_*.lua`.
+- `build-farheap-mame.sh` accepts `TEST_SRC=...` so the same MAME+dump harness can run both `farheap_smalltest.c` and `memtest128.c`.
 - Oracle source: `scratch/ccpm86-src/kern/{memory.mem,mpb.def,mem.def}`, `modfunc.def`.
+
+### emu2 catches MAME's exact ZIP OOM message (2026-08-25)
+
+Root-caused and fixed why emu2 never reproduced MAME's OOM: emu2's underlying MCB
+free-memory pool was sized ONCE at startup (`dos.c` `init_dos()`, `mcb_init(0x80,
+0xA000)`, ~640 KB) independent of the `CPM86_TPA_KB` cap that only applied to the
+`.CMD` loader's LOAD-TIME group grant. A running program's RUNTIME BDOS-128 calls
+(farheap.c's `_fmalloc`) could therefore always draw "free" memory from the
+oversized pool, so zip's deflate window/hash allocations never failed under emu2
+regardless of the configured TPA.
+
+**Fix** (`emu2-cpm86` commit `fe9dfb9`): `init_dos()` now peeks the program file
+via `cpm86_detect()` BEFORE calling `mcb_init()`, and if it's CP/M-86, sizes the
+WHOLE arena to `CPM86_TPA_KB` — load-time AND runtime allocations now share one
+correctly-sized pool. New `cpm86_get_tpa_kb()` is the single source of truth
+(precedence: `-m <kb>` CLI option > `CPM86_TPA_KB` env var > built-in default,
+210 KB). `cpm86.c`'s group-allocation logic was also reworked to use the same
+"ask max, fall back to actual available if it covers the minimum" pattern the
+BDOS-128 handler already used, spreading extra/stack surplus from the grant's
+TRUE size (matching `load.sup`'s real "spread after the combined allocation
+returns" semantics).
+
+**Calibration**: at `-m 190` (or `CPM86_TPA_KB=190`), emu2 reproduces MAME's
+CURRENT exact failure, `zip error: Out of memory (window allocation)`, byte-for-
+byte the same message as a fresh real-MAME run (confirmed via
+`scripts/rc759_zip_autorun.sh` with cleared NVRAM). At the built-in default (210),
+emu2 fails at the SLIGHTLY later `hash table allocation` request instead (deflate
+allocates `window` first, then the larger combined `prev+head` "hash table"), i.e.
+the stock default still leaves emu2 with marginally more headroom than the real
+machine; use `-m 190` for a byte-exact MAME OOM reproduction. `memtest128` and
+`farheap_smalltest` regressions were re-verified (PASS) on both MAME and emu2
+after this fix (see `build-farheap-mame.sh`'s `TEST_SRC` fix, same commit series).
