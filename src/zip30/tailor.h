@@ -411,11 +411,15 @@ typedef struct ztimbuf {
 #ifndef FOPR    /* fallback default definitions for FOPR, FOPM, FOPW: */
 #  define FOPR "r"
 #  define FOPM "r+"
-#  define FOPW "w"
+#  if defined(DOS) && defined(MSDOS)
+#    define FOPW "wb"
+#  else
+#    define FOPW "w"
+#  endif
 #endif /* fallback definition */
 
 #ifndef FOPW_TMP    /* fallback default for opening writable temp files */
-#  define FOPW_TMP FOPW
+#  define FOPW_TMP "wb"
 #endif
 
 /* Open the old zip file in exclusive mode if possible (to avoid adding

@@ -137,3 +137,34 @@ the stock default still leaves emu2 with marginally more headroom than the real
 machine; use `-m 190` for a byte-exact MAME OOM reproduction. `memtest128` and
 `farheap_smalltest` regressions were re-verified (PASS) on both MAME and emu2
 after this fix (see `build-farheap-mame.sh`'s `TEST_SRC` fix, same commit series).
+
+### zipcopy binary-mode fix + diagnostics gated (2026-08-25, follow-up)
+
+Root cause of the `zipcopy`-stage temp-file corruption on real MAME (noted above
+under "Latest verification"): `tailor.h`'s fallback `FOPW`/`FOPW_TMP` defaulted to
+text mode (`"w"`) on this DOS/MSDOS-like target; a text-mode write can expand an
+LF byte in the compressed deflate stream to CR/LF, corrupting the temp archive
+byte count (`s=NNN, actual=NNN+1`-style symptoms). Fixed by defining `FOPW` as
+`"wb"` when `DOS && MSDOS` and `FOPW_TMP` unconditionally as `"wb"`
+(`src/zip30/tailor.h`). Regression guard: `tests/test-cpm86-zip-binary-mode.sh`
+greps `tailor.h` for the `"wb"` definition so a future edit that silently
+reverts to text mode fails CI immediately.
+
+The ad hoc `printf`/`fprintf(stderr, "BF2 ...")` diagnostics used to find this
+(in `cpm86.c`'s `tempname()` and `fileio.c`'s `bfwrite()`) were left in the tree
+unconditionally after the fix landed — a pristine build was printing build-stamp
+and per-write debug lines on every run. Gated both behind a new
+`CPM86_ZIPCOPY_TRACE` macro (off by default; not currently wired into any build
+script's `DEFS`, so today's `ZIP.CMD` is silent again). Re-verified after gating:
+`build-zip-cpm86.sh` builds clean, and `emu2 -m 300 ZIP.CMD poem.zip poem.txt`
+still produces a valid `poem.zip` (exit 0).
+
+Also gated `port/diskio.c`'s optional per-BDOS-call trace behind `CPM86_TRACE=1`
+in `build-lib.sh` (was previously only reachable by editing the source), fixed a
+correctness bug found alongside it (`__close()` skips `F_CLOSE` for read-only
+handles -- avoids a spurious I/O error from CCP/M's `0xFF` on some write-
+protected/system-drive read-only closes), and rebuilt+reinstalled `clibs.lib`
+from the clean (non-traced) source. Re-verified against the fresh library:
+`memtest128` PASS 4/4 (real MAME) + PASS (emu2); `farheap_smalltest` PASS 6/6
+96 KB (real MAME) + PASS 112 KB (emu2, sane post-aliasing-fix value) -- both
+regressions unaffected by the trace-gating/close-skip changes.

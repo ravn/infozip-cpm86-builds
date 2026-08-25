@@ -2731,6 +2731,14 @@ size_t bfwrite(buffer, size, count, mode)
 #endif
 
         r = fwrite((char *)buffer + bytes_written, 1, bytes_to_write, y);
+#ifdef CPM86_ZIPCOPY_TRACE
+        /* Diagnostic used to root-cause the zipcopy-stage temp-file write
+         * corruption (2026-08-25); see the FOPW/FOPW_TMP binary-mode fix
+         * in tailor.h. Gated so a pristine build stays silent. */
+        fprintf(stderr, "BF2 req=%u ret=%u entry=%lu\n",
+                (unsigned)bytes_to_write, (unsigned)r,
+                (unsigned long)bytes_this_entry);
+#endif
         bytes_written += r;
         bytes_this_split += r;
         if (!(mode == BFWRITE_HEADER ||

@@ -60,21 +60,21 @@ OUT="${OUT:-$ROOT/out-zip-cpm86}"
 mkdir -p "$OUT"
 
 INC="-I$B/hdr/dos/h -I$B/clib/h -I$B/clib/intel/h -I$B/watcom/h -I$B/lib_misc/h"
-DEFS="-DDOS -DMSDOS -DDYN_ALLOC -DNO_ASM -DSMALL_MEM -DHASH_BITS=12 -DLIT_BUFSIZE=0x0400 -DWSIZE=0x1000 -DCPM86_UPPER_OPTS -DCPM86_STEP_TRACE ${EXTRA_DEFS:-}"
+: "${HASH_BITS:=12}"
+: "${LIT_BUFSIZE:=0x0400}"
+: "${WSIZE:=0x1000}"
+DEFS="-DDOS -DMSDOS -DDYN_ALLOC -DNO_ASM -DSMALL_MEM -DHASH_BITS=$HASH_BITS -DLIT_BUFSIZE=$LIT_BUFSIZE -DWSIZE=$WSIZE -DCPM86_UPPER_OPTS -DCPM86_STEP_TRACE ${EXTRA_DEFS:-}"
 CFLAGS="-bcpm86 -march=i186 -mcmodel=l -zm -Os"
 
 # Zip.exe object set (from msdos/makefile.wat) minus the hand-asm match/crc
 # (C versions used via NO_ASM) and minus msdos.c (replaced by cpm86/cpm86.c).
 CORE="zip crypt ttyio zipfile zipup util fileio deflate trees globals crc32"
 
-# farheap right-sized: with SMALL_MEM/WSIZE=0x1000/HASH_BITS=12 the deflate far
-# tables are window 8K + prev 8K + head 8K = ~24K; the far heap only needs to
-# cover those plus a little slack. 0x20000 (128K) was ~4x oversized -- the loader
-# must reserve the whole Extra G_MAX, so an oversized farheap directly inflates
-# the load-time footprint that trips the CCP/M "For lidt lager" ceiling. Measured
-# minimum that still deflates cleanly under emu2 is 0x8000 (0x6000 fails); use
-# 0xC000 (48K) for margin -> ~80K less load-time reservation than 0x20000.
-: "${FARHEAP:=0xC000}"
+# BDOS-128 is now the primary far-heap allocator and obtains each segment from
+# the OS with its actual granted size. Keep only a minimal linker reservation
+# for the legacy fallback marker; reserving 48K here needlessly starves the
+# dynamic grant on real CCP/M-86. Override FARHEAP when testing that fallback.
+: "${FARHEAP:=0x1000}"
 FARHEAP_PARAS=$(( FARHEAP / 16 ))
 
 echo "==> compiling Zip for CP/M-86 (large model, farheap=${FARHEAP} = ${FARHEAP_PARAS} paras)"

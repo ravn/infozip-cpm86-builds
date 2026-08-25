@@ -339,7 +339,7 @@ void version_local(void)
 #else
     strcpy(buf, "an unknown compiler");
 #endif
-    printf("Compiled with %s for CP/M-86 (Intel 8086/80186, %s model).\n\n",
+    printf("Compiled with %s for CP/M-86 (Intel 8086/80186, %s model).\n",
            buf,
 #ifdef UTIL
            "small"
@@ -347,6 +347,10 @@ void version_local(void)
            "large"
 #endif
            );
+#ifdef CPM86_ZIPCOPY_TRACE
+    printf("Build: " __DATE__ " " __TIME__ "\n");
+#endif
+    printf("\n");
 }
 
 /* ------------------------------------------------------------------ */
@@ -406,9 +410,27 @@ char *tempname(char *zip)
      * Linked before fileio.obj so this definition takes precedence. */
     char *t;
     (void)zip;
-    if ((t = (char *)malloc(L_tmpnam)) == NULL)
+    if ((t = (char *)malloc(L_tmpnam)) == NULL) {
+#ifdef CPM86_ZIPCOPY_TRACE
+        printf("[tn:nomem build " __DATE__ " " __TIME__ "]\n");
+#endif
         return NULL;
-    if (tmpnam(t) == NULL) { free(t); return NULL; }
+    }
+    if (tmpnam(t) == NULL) {
+#ifdef CPM86_ZIPCOPY_TRACE
+        printf("[tn:null build " __DATE__ " " __TIME__ "]\n");
+#endif
+        free(t); return NULL;
+    }
+#ifdef CPM86_ZIPCOPY_TRACE
+    /* Diagnostic uses printf (mesg=stdout, the SAME path as zip's own
+     * "adding:" lines which are proven to reach the CCP/M console).  The
+     * build stamp confirms which binary is running on real hardware.
+     * Was used to root-cause the zipcopy-stage temp-file corruption
+     * (2026-08-25) that led to the FOPW/FOPW_TMP binary-mode fix below. */
+    printf("[build " __DATE__ " " __TIME__ " tn:%s]\n", t);
+    fflush(stdout);
+#endif
     return t;
 }
 
