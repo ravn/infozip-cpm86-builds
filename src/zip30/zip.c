@@ -101,6 +101,10 @@ int bflag = 0;          /* Use text mode as default */
 char _version[] = VERSION;
 #endif
 
+#ifdef CPM86_STEP_TRACE
+int _zip_step = 0;   /* CP/M-86 finalization step tracker (see ziperr) */
+#endif
+
 #ifdef WINDLL
 jmp_buf zipdll_error_return;
 #ifdef ZIP64_SUPPORT
@@ -350,6 +354,11 @@ ZCONST char *h;         /* message about how it happened */
     fprintf(logfile, "\n");
     logfile_line_started = 0;
   }
+#ifdef CPM86_STEP_TRACE
+  { extern int _zip_step; extern char *tempzip;
+    printf("[ziperr step=%d c=%d errno=%d h=%p tz=%p]\n",
+           _zip_step, c, errno, (void*)h, (void*)tempzip); fflush(stdout); }
+#endif
   if (h != NULL) {
     if (PERR(c))
       fprintf(mesg, "zip I/O error: %s", strerror(errno));
@@ -2080,6 +2089,13 @@ struct option_struct far options[] = {
     {"UN", "unicode",     o_REQUIRED_VALUE, o_NOT_NEGATABLE, o_UN, "UN=quit, warn, ignore, no, escape"},
 #endif
     {"v",  "verbose",     o_NO_VALUE,       o_NOT_NEGATABLE, 'v',  "display additional information"},
+#ifdef CPM86_UPPER_OPTS
+    /* CP/M-86: the CCP uppercases the whole command tail, so a user typing
+       -v gets -V.  VMS format (-V) is not built on this target, so map -V to
+       the same 'v' handler -- lets `zip -V` reach verbose/version on CCP/M.
+       Gated behind -DCPM86_UPPER_OPTS so the pristine DOS build is unchanged. */
+    {"V",  "verbose-upper", o_NO_VALUE,     o_NOT_NEGATABLE, 'v',  "same as -v (CCP uppercases -v)"},
+#endif
     {"",   "version",     o_NO_VALUE,       o_NOT_NEGATABLE, o_ve, "(if no other args) show version information"},
 #ifdef VMS
     {"V",  "VMS-portable", o_NO_VALUE,      o_NOT_NEGATABLE, 'V',  "Store VMS attributes, portable file format"},
@@ -2195,6 +2211,21 @@ char **argv;            /* command line tokens */
   setlocale(LC_CTYPE, "I");
 #else
   SETLOCALE(LC_CTYPE, "");
+#endif
+
+#ifdef CPM86_AUTORUN
+  /* Headless MAME driver: the CCP autostarts this as `menu imenu` (a command
+     tail is present), so unconditionally override argv with a fixed command
+     line to exercise the deflate path and leave the (KEEP_BADZIP-preserved)
+     archive on disk for offline stream diffing. */
+  {
+    static char *ar_argv[3];
+    ar_argv[0] = (char *)"zip";
+    ar_argv[1] = (char *)"POEM.ZIP";
+    ar_argv[2] = (char *)"POEM.TXT";
+    argc = 3;
+    argv = ar_argv;
+  }
 #endif
 
 #ifdef UNICODE_SUPPORT
@@ -5896,6 +5927,9 @@ char **argv;            /* command line tokens */
     fflush(mesg);
   }
 
+#ifdef CPM86_STEP_TRACE
+  _zip_step = 61;
+#endif
   if ((r = putend(k, t, c, zcomlen, zcomment)) != ZE_OK) {
     ZIPERR(r, tempzip);
   }
@@ -5903,6 +5937,9 @@ char **argv;            /* command line tokens */
   /*
   tempzf = NULL;
   */
+#ifdef CPM86_STEP_TRACE
+  _zip_step = 62;
+#endif
   if (fclose(y)) {
     ZIPERR(d ? ZE_WRITE : ZE_TEMP, tempzip);
   }
@@ -5928,10 +5965,16 @@ char **argv;            /* command line tokens */
 
 #ifndef WINDLL
   /* Test new zip file before overwriting old one or removing input files */
+#ifdef CPM86_STEP_TRACE
+  _zip_step = 63;
+#endif
   if (test)
     check_zipfile(tempzip, argv[0]);
 #endif
   /* Replace old zip file with new zip file, leaving only the new one */
+#ifdef CPM86_STEP_TRACE
+  _zip_step = 64;
+#endif
   if (strcmp(zipfile, "-") && !d)
   {
     diag("replacing old zip file with new zip file");

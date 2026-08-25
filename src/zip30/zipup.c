@@ -1004,7 +1004,18 @@ struct zlist far *z;    /* zip entry to compress */
       if (bytes_this_entry != (uzoff_t)(key ? s + 12 : s)) {
         fprintf(mesg, " s=%s, actual=%s ",
                 zip_fzofft(s, NULL, NULL), zip_fzofft(bytes_this_entry, NULL, NULL));
+#ifdef CPM86_KEEP_BADZIP
+        /* Instrumentation: keep the malformed archive for offline stream
+           diffing instead of aborting.  error() -> ziperr(ZE_LOGIC) would
+           destroy(tempzip) and delete the very bytes we want to inspect.
+           Rewrite the local header to describe the bytes actually written so
+           the compressed region is cleanly sliceable by host tools. */
+        zipwarn("CPM86_KEEP_BADZIP: keeping archive despite size mismatch", "");
+        z->siz = bytes_this_entry;
+        s = (zoff_t)bytes_this_entry;
+#else
         error("incorrect compressed size");
+#endif
       }
 #if 0
        /* seek ok, ftell() should work, check compressed size */

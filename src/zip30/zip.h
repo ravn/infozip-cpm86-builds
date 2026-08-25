@@ -576,6 +576,21 @@ extern int zipstate;            /* flag "zipfile has been stat()'ed */
 #  define Tracec(c,x) {if (verbose && (c)) fprintf x ;}
 #  define Tracecv(c,x) {if (verbose>1 && (c)) fprintf x ;}
 # endif
+# ifdef CPM86_ASSERT_ONLY
+   /* Keep Assert/check_match (deflate window guards) but drop the Trace()
+      format-string CONST bloat, which otherwise pushes DGROUP past the 8086
+      64 KB segment limit on the large-model CP/M-86 build (E2021). */
+#  undef  Trace
+#  undef  Tracev
+#  undef  Tracevv
+#  undef  Tracec
+#  undef  Tracecv
+#  define Trace(x)
+#  define Tracev(x)
+#  define Tracevv(x)
+#  define Tracec(c,x)
+#  define Tracecv(c,x)
+# endif
 #else
 #  define diag(where)
 #  define Assert(cond,msg)
