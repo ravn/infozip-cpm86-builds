@@ -569,6 +569,10 @@ local void help()
 #endif
 /* Print help (along with license info) to stdout. */
 {
+#if defined(CPM86_SLIM) || defined(CPM86_CREATE_ONLY)
+  printf("Zip (CP/M-86). Usage: zip [-0..-9 -d -f -u -m -j] archive.zip file...\n");
+  return;
+#else
   extent i;             /* counter for help array */
 
   /* help array */
@@ -695,6 +699,7 @@ local void help()
     printf(text[i], VERSION, REVDATE);
     putchar('\n');
   }
+#endif
 }
 
 #ifdef VMSCLI
@@ -704,6 +709,10 @@ local void help_extended()
 #endif
 /* Print extended help to stdout. */
 {
+#if defined(CPM86_SLIM) || defined(CPM86_CREATE_ONLY)
+  printf("Zip (CP/M-86). Usage: zip [-0..-9 -d -f -u -m -j] archive.zip file...\n");
+  return;
+#else
   extent i;             /* counter for help array */
 
   /* help array */
@@ -1042,6 +1051,7 @@ local void help_extended()
   }
 #ifdef DOS
   check_for_windows("Zip");
+#endif
 #endif
 }
 

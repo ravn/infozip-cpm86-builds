@@ -2037,8 +2037,8 @@ register unsigned int len;
 int ask_for_split_read_path(current_disk)
   ulg current_disk;
 {
-#ifdef CPM86_CREATE_ONLY
-  (void)current_disk; return ZE_OK;   /* create-only: split-read removed */
+#if defined(CPM86_CREATE_ONLY) || defined(CPM86_SLIM)
+  (void)current_disk; return ZE_OK;   /* slim: multi-disk split-read removed */
 #else
   FILE *f;
   int is_readable = 0;
@@ -2287,8 +2287,8 @@ int ask_for_split_read_path(current_disk)
 int ask_for_split_write_path(current_disk)
   ulg current_disk;
 {
-#ifdef CPM86_CREATE_ONLY
-  (void)current_disk; return 0;   /* create-only: split-write removed */
+#if defined(CPM86_CREATE_ONLY) || defined(CPM86_SLIM)
+  (void)current_disk; return 0;   /* slim: multi-disk split-write removed */
 #else
   unsigned int num = (unsigned int)current_disk + 1;
   int i;

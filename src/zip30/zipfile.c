@@ -3191,8 +3191,8 @@ local int scanzipf_fixnew()
    Return an error code in the ZE_ class.
 */
 {
-#ifdef CPM86_CREATE_ONLY
-  return ZE_OK;   /* create-only: archive-repair (-FF) scanner removed */
+#if defined(CPM86_CREATE_ONLY) || defined(CPM86_SLIM)
+  return ZE_OK;   /* slim: archive-repair (-FF) scanner removed */
 #else
   /* This function only reads the standard End-of-CentralDir record and the
      standard CentralDir-Entry records directly.  To conserve stack space,

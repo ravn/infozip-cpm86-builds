@@ -32,14 +32,22 @@ could not be M_ALLOC'd → "Out of memory", and the far-heap fallback then hande
 out **overlapping** memory → bad-CRC archives, then a CPU trap.
 
 ## The two fixes
-1. **Footprint (this repo).** `-DCPM86_CREATE_ONLY` stubs the update/copy/repair
-   + split code a create-only tool never uses (`zipcopy`, `bfcopy`,
-   `scanzipf_fixnew`, `scanzipf_regnew`, `ask_for_split_*`): load 186.0K → 163.4K.
-   Plus `WSIZE=0x800` (2 KB window → ~12 KB tables). Threshold drops to emu2
-   `-m 182` (< MAME's ~190). See `build-zip-cpm86-mame.sh`.
-   TRADE-OFF: create-only cannot add to / update an existing archive (it
-   overwrites) and has no `-F/-FF` repair. Gated behind the flag; the stock
-   build keeps full functionality.
+1. **Footprint (this repo).** Two flag levels, both gated so the stock build
+   keeps full functionality:
+   - `-DCPM86_SLIM` (**the shipped `build-zip-cpm86-mame.sh` default**) stubs
+     only what a floppy zip never needs: multi-disk SPLIT
+     (`ask_for_split_*`), `-F/-FF` REPAIR (`scanzipf_fixnew`), and the
+     multi-page `help()/help_extended()` usage text (~17 KB of DATA-group
+     strings) → one-line usage. Load 186.0K → ~157.8K. **KEEPS incremental
+     update** (`zipcopy`/`bfcopy`/`scanzipf_regnew`): `zip a.zip f2` still adds
+     f2 to an existing a.zip. With `WSIZE=0x1000` (best ratio, POEM.TXT→219 B)
+     the threshold is emu2 `-m 188` — verified working on real MAME.
+   - `-DCPM86_CREATE_ONLY` additionally drops the update path (create-a-new-
+     archive only, overwrites an existing one): load → 163.4K, ~12 KB more
+     headroom. Use with `WSIZE=0x800` for a larger safety margin when updating
+     a very large existing archive whose directory fills the near heap.
+   The deflate far tables are a FIXED size independent of input, so the tight
+   `-m 188` margin holds for any input file size.
 2. **Correctness (open-watcom-v2 `port/farheap.c`).** A tight fn-128 (M_ALLOC)
    OOM (documented `BX=0FFFFH`) is now recognised as "fn 128 present, just out of
    memory" and returns `_NULLSEG` cleanly, instead of falling through to carve
