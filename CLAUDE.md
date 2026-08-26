@@ -8,6 +8,22 @@ built with Open Watcom `owcc -bcpm86`). Read this before testing any `.CMD`.
 truth witness. Only **MAME (rc759, CCP/M-86)** decides CCP/M-specific behaviour.
 If emu2 and MAME disagree, MAME wins.
 
+## Testing on real MAME rc759 — hard rules
+- **rc759 CCP/M boots in ~290 EMULATED seconds.** A turnkey `menu.cmd`
+  autostart does NOT run until ~t175–290. **Always `-seconds_to_run 400`** and
+  read a LATE snapshot frame. An early frame showing `*** PICCOLINE TEST, V.2.1
+  ***` is the ROM monitor / POST *mid-boot* — **NOT a crash**. (Mis-read once,
+  2026-08-26, → a bogus "compact UNZIP crashes" conclusion; the real result was
+  a clean inflate PASS once the boot finished.) See workspace memory
+  `reference_rc759_mame_c_verification.md`.
+- Established harness lives in `/Users/ravn/z80/scripts/` (NOT in this repo):
+  `rc759_unzip_autorun.sh` (UNZIP as menu.cmd on `mandel.img` turnkey + periodic
+  snapshot lua), `rc759_zip_autorun.sh`, `rc759_make_{zip,unzip}_b.sh` (author a
+  B: disk for an INTERACTIVE `rc759_boot_cpm.sh` run), `rc759_boot_cpm.sh`.
+- **VERIFIED (2026-08-26):** compact-model UNZIP inflates >32 KB DEFLATE
+  (`BIG.ZIP`) on real rc759 → `No errors detected`, clean `A>`
+  (`UNZIP_COMPACT_MAME_2026-08-26.md`, proof `UNZIP_COMPACT_MAME_BIG_PASS.png`).
+
 ## Testing a `.CMD` under emu2 — hard rules (each caused a FALSE result once)
 
 1. **Actually exercise the operation — delete outputs first.** Before an

@@ -67,17 +67,17 @@ CLIB="$OWROOT/contrib/ravn/watcom-cpm86-libc"
 # COMPACT model (was small): UnZip's 32 KB inflate window (slide[]) is malloc'd
 # via MALLOC_WORK, and in the small model that malloc came from the near heap
 # inside the single 64 KB DGROUP -> it could not fit ("not enough memory to
-# inflate"), so only STORED entries extracted.  Compact (-mcmodel=c) keeps the
+# inflate"), so only STORED entries extracted.  Compact (-mcmodel=s) keeps the
 # code NEAR (one <=64 KB code segment, exactly as small -- UnZip's code only
 # just fits 64 KB, and the LARGE model's -zm far-call overhead bloats it past
 # the single CP/M-86 code group -> E2052), but makes DATA far: -mc defines
 # __BIG_DATA__ so plain malloc()/free() are the FAR-heap ones (the .CMD Extra
 # group / dynamic BDOS-128 grants), so the 32 KB slide lives outside the 64 KB
 # near limit and DEFLATED entries now inflate.
-LIBDIR="${LIBDIR:-$OWROOT/lib286/cpm86}"            # holds clibc.lib + cstartcm.obj
+LIBDIR="${LIBDIR:-$OWROOT/lib286/cpm86}"
 ENVSH="$OWROOT/contrib/ravn/cpm86-clib/env.sh"
 
-[ -f "$LIBDIR/clibc.lib" ] && [ -f "$LIBDIR/cstartcm.obj" ] || {
+[ -f "$LIBDIR/clibs.lib" ] && [ -f "$LIBDIR/cstartcpm.obj" ] || {
   echo "!! compact-model clib missing under $LIBDIR" >&2
   echo "   build it:  ( cd $CLIB && MODEL=c ./build-lib.sh )" >&2
   exit 1; }
@@ -86,7 +86,7 @@ ENVSH="$OWROOT/contrib/ravn/cpm86-clib/env.sh"
 # shellcheck disable=SC1090
 . "$ENVSH" >/dev/null
 
-OUT="${OUT:-$ROOT/out-cpm86}"
+OUT="${OUT:-$ROOT/out-cpm86-small-diag}"
 mkdir -p "$OUT"
 
 INC="-I$B/hdr/dos/h -I$B/clib/h -I$B/clib/intel/h -I$B/watcom/h -I$B/lib_misc/h"
@@ -98,7 +98,7 @@ DEFS="-DFLEXOS -DMALLOC_WORK -DDYNALLOC_CRCTAB -DNO_ZIPINFO -DNO_DEFLATE64 \
 -DSMALL_MEM -DINBUFSIZ=512 \
 -DLZW_CLEAN -DCOPYRIGHT_CLEAN -DNO_IMPLODE \
 -Dzfmalloc=malloc -Dzffree=free ${EXTRA_DEFS:-}"
-CFLAGS="-bcpm86 -march=i186 -mcmodel=c -Os"
+CFLAGS="-bcpm86 -march=i186 -mcmodel=s -Os"
 
 # Far-heap reservation for the linker's fallback marker.  BDOS-128 is the primary
 # allocator and grants each segment (incl. the 32 KB inflate window) from the OS
@@ -135,16 +135,15 @@ done
 PORTDIR="$OWROOT/contrib/ravn/watcom-cpm86-libc/port"
 PORTINC="-I$OWROOT/bld/clib/h -I$OWROOT/bld/clib/heap/h"
 # shellcheck disable=SC2086
-owcc $CFLAGS $INC $PORTINC -DCPM86_FARHEAP_PARAS=$FARHEAP_PARAS \
-  -c "$PORTDIR/farheap.c" -o "$OUT/farheap.obj"
-OBJS="$OBJS file $OUT/farheap.obj"
+:
+# (small model: no far heap)
 
 echo "==> linking UNZIP.CMD"
 WLINK="$B/wl/osxa64/wlink.exe"
 # shellcheck disable=SC2086
-"$WLINK" format cpm86 op dosseg op start=_cstart_ op farheap=$FARHEAP \
+"$WLINK" format cpm86 op dosseg,nodefaultlibs \
   op map="$OUT/unzip.map" \
-  name "$OUT/UNZIP.CMD" file "$LIBDIR/cstartcm.obj" $OBJS library "$LIBDIR/clibc.lib"
+  name "$OUT/UNZIP.CMD" file "$LIBDIR/cstartcpm.obj" $OBJS library "$LIBDIR/clibs.lib"
 
 cp "$OUT/UNZIP.CMD" "$ROOT/UNZIP.CMD"
 echo
