@@ -63,7 +63,7 @@ INC="-I$B/hdr/dos/h -I$B/clib/h -I$B/clib/intel/h -I$B/watcom/h -I$B/lib_misc/h"
 # Zip utility .c files already #define UTIL themselves, so -DUTIL is redundant
 # but harmless for those; it IS needed for the shared core files.
 CFLAGS="-bcpm86 -march=i186 -mcmodel=s -Os"
-DEFS="-DDOS -DMSDOS -DUTIL"
+DEFS="-DUTIL"
 
 WLINK="$B/wl/osxa64/wlink.exe"
 

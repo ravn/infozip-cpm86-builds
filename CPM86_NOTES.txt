@@ -1,0 +1,114 @@
+========================================================================
+ Info-ZIP for Concurrent CP/M-86 (CCP/M-86) -- platform notes
+========================================================================
+
+These programs are the standard Info-ZIP Zip 3.0 / UnZip 6.0 tools ported
+to Concurrent CP/M-86 with Open Watcom (owcc -bcpm86).  The target system
+had 384 Kb RAM with a 219 Kb TPA, and features have been cut accordingly
+(See below).  This file explains the ONE thing that behaves differently
+from every other Info-ZIP platform:  command-line option letter case.
+
+
+1. THE GOLDEN RULE: the command line is folded to UPPER CASE
+------------------------------------------------------------------------
+The CCP/M command-line interpreter upper-cases the ENTIRE command tail
+before your program ever starts -- file names, option letters and even
+passwords.  So when you type
+
+        ZIP -e OUT.ZIP letter.txt
+
+the program actually receives  "-E OUT.ZIP LETTER.TXT".
+
+Consequences you must know:
+
+  * Type option letters in UPPER CASE.  A lower-case letter you type is
+    folded up anyway, so on CCP/M there is effectively only ONE case.
+
+  * Where the classic Info-ZIP manuals give a lower-case AND an upper-case
+    option the SAME letter (e.g. unzip -o vs -O), only the folded (upper)
+    form is reachable here.  We have re-pointed the important ones so the
+    useful action survives folding -- see section 3.
+
+  * Digit options (-0 .. -9) are unaffected (digits have no case).
+
+  * Passwords are folded to UPPER CASE too.  "ZIP -Psecret" stores the
+    password as SECRET.  This is consistent between encrypting and
+    decrypting, so archives still round-trip -- but you cannot use a
+    lower-case or mixed-case password from the command line.  For a
+    case-preserving password, use the INTERACTIVE prompt (see zipcloak /
+    "zip -E") which reads the console directly and is NOT folded.
+
+
+2. LONG OPTIONS (--name) are case-insensitive in ZIP
+------------------------------------------------------------------------
+Because folding makes "--test" and "--TEST" indistinguishable, ZIP on
+CP/M-86 compares long option names case-insensitively.  So --TEST, --Test
+and --test all work.  (This applies to ZIP's --long options; the short
+single-letter options follow the upper-case rule above.)
+
+
+3. CP/M-86-SPECIFIC OPTION BEHAVIOUR (what actually works)
+------------------------------------------------------------------------
+ZIP
+  -0 .. -9      store .. best compression          (digits: unaffected)
+  -D            do not add directory entries
+  -J            junk (drop) path names
+  -M            do not add MS-DOS/CP/M volume label
+  -P<pw>        set password on the command line    (folded to UPPER CASE;
+                attach the value: -PSECRET, or -P SECRET)
+  --<name>      long options, case-insensitive (e.g. --TEST, --OUT=x.zip)
+  Note: this is a create/update build -- archive splitting and archive
+  repair are not included.
+
+UNZIP
+  (no option)   extract, prompting before overwriting an existing file
+  -O            OVERWRITE existing files without prompting.  On other
+                Info-ZIP platforms this action is lower-case -o; here the
+                fold turns -o into -O, so -O is aliased to overwrite.
+  -P<pw>        decrypt with this password (folded to UPPER CASE)
+  -T            test archive integrity (not timestamps)
+  
+  Extracts STORED and DEFLATED (normal zip) members.  It is built in the
+  compact memory model so the 32 KB inflate window lives in the far heap.
+  The OBSOLETE PKZIP-1.x methods -- implode, shrink, reduce -- are NOT
+  supported (dropped to fit the code in one 64 KB code segment); such a
+  member reports an unsupported-method error.  Any archive made by this or a
+  modern Zip uses store/deflate, so this is not a limitation in practice.
+
+FUNZIP
+  FUNZIP archive.zip            write the first member to the screen/stdout
+  FUNZIP pw archive.zip         same, decrypting with password "pw"
+  (Extracts stored/deflated members, like UnZip.)
+
+ZIPSPLIT
+  ZIPSPLIT archive.zip         split into ~36000-byte pieces (piece1.zip ...)
+  Works; option letters follow the upper-case rule.
+
+ZIPNOTE
+  Reads/writes archive comments.  KNOWN ISSUE: hangs when reading an
+  archive under the emu2 emulator; use on real CCP/M-86 hardware / MAME.
+
+ZIPCLOAK
+  Encrypts/decrypts an existing archive.  It reads the passphrase from the
+  CONSOLE (not the command line), so the password is NOT case-folded --
+  this is the way to use a case-sensitive password.  It is interactive and
+  must be run on a real console (CCP/M-86 hardware / MAME); it cannot be
+  driven from a redirected/piped input.
+
+
+4. QUICK EXAMPLES (type everything in UPPER CASE)
+------------------------------------------------------------------------
+  Create a STORED archive UnZip here can also read back:
+        ZIP -0 OUT.ZIP FILE1.TXT FILE2.TXT
+
+  Extract, overwriting existing files silently:
+        UNZIP -O OUT.ZIP
+
+  Command-line password (stored/decrypted as MYPASS, upper-cased):
+        ZIP -PMYPASS SECRET.ZIP FILE.TXT
+        UNZIP -PMYPASS SECRET.ZIP
+
+  Case-sensitive password (interactive, on real console):
+        ZIPCLOAK SECRET.ZIP        ...then type the passphrase when asked
+
+========================================================================

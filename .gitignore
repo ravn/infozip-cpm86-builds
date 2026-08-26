@@ -15,12 +15,11 @@
 *.obx
 *.exe
 !src/**/*.exe
+# Built CP/M-86 command files are products, never source -- keep them out of git.
+*.CMD
 
 # macOS
 .DS_Store
-/UNZIP.CMD
-
-/ZIP.CMD
 /out-zip-cpm86/
 /out-funzip-cpm86/
 /out-ziputils-cpm86/

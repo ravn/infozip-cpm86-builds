@@ -31,6 +31,12 @@ open('dist/stage/README.TXT','w',newline='\r\n').write(open('dist/stage/README.t
 "
 rm -f dist/stage/README.tmp
 
+# CP/M-86 platform notes (option-letter case folding etc.), CRLF so TYPE/EDIT
+# render it correctly on the target machine.
+python3 -c "
+open('dist/stage/CPM86_NOTES.TXT','w',newline='\r\n').write(open('CPM86_NOTES.txt').read())
+"
+
 echo "==> creating archives"
 ( cd dist/stage && zip -9 -q "../infozip-dos16-$VER.zip" ./* )
 rm -rf dist/stage

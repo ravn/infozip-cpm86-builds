@@ -60,7 +60,7 @@ OUT="${OUT:-$ROOT/out-zip-cpm86}"
 mkdir -p "$OUT"
 
 INC="-I$B/hdr/dos/h -I$B/clib/h -I$B/clib/intel/h -I$B/watcom/h -I$B/lib_misc/h"
-DEFS="-DDOS -DMSDOS -DDYN_ALLOC -DNO_ASM -DSMALL_MEM -DHASH_BITS=12 -DLIT_BUFSIZE=0x0400 -DWSIZE=0x1000 -DCPM86_UPPER_OPTS -DCPM86_STEP_TRACE ${EXTRA_DEFS:-}"
+DEFS="-DDYN_ALLOC -DNO_ASM -DSMALL_MEM -DHASH_BITS=12 -DLIT_BUFSIZE=0x0400 -DWSIZE=0x1000 -DCPM86_UPPER_OPTS -DCPM86_STEP_TRACE ${EXTRA_DEFS:-}"
 CFLAGS="-bcpm86 -march=i186 -mcmodel=l -zm -zt64 -Os"
 
 # Zip.exe object set (from msdos/makefile.wat) minus the hand-asm match/crc

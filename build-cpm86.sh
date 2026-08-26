@@ -64,12 +64,22 @@ OWROOT="${OWROOT:-$(cd "$ROOT/../open-watcom-v2" 2>/dev/null && pwd || true)}"
 
 B="$OWROOT/bld"
 CLIB="$OWROOT/contrib/ravn/watcom-cpm86-libc"
-LIBDIR="${LIBDIR:-$CLIB/build-lib}"                 # holds clibcpm.lib + crt0.obj
+# COMPACT model (was small): UnZip's 32 KB inflate window (slide[]) is malloc'd
+# via MALLOC_WORK, and in the small model that malloc came from the near heap
+# inside the single 64 KB DGROUP -> it could not fit ("not enough memory to
+# inflate"), so only STORED entries extracted.  Compact (-mcmodel=c) keeps the
+# code NEAR (one <=64 KB code segment, exactly as small -- UnZip's code only
+# just fits 64 KB, and the LARGE model's -zm far-call overhead bloats it past
+# the single CP/M-86 code group -> E2052), but makes DATA far: -mc defines
+# __BIG_DATA__ so plain malloc()/free() are the FAR-heap ones (the .CMD Extra
+# group / dynamic BDOS-128 grants), so the 32 KB slide lives outside the 64 KB
+# near limit and DEFLATED entries now inflate.
+LIBDIR="${LIBDIR:-$OWROOT/lib286/cpm86}"            # holds clibc.lib + cstartcm.obj
 ENVSH="$OWROOT/contrib/ravn/cpm86-clib/env.sh"
 
-[ -f "$LIBDIR/clibcpm.lib" ] && [ -f "$LIBDIR/crt0.obj" ] || {
-  echo "!! clibcpm.lib / crt0.obj missing under $LIBDIR" >&2
-  echo "   build them first:  ( cd $CLIB && ./build-lib.sh )" >&2
+[ -f "$LIBDIR/clibc.lib" ] && [ -f "$LIBDIR/cstartcm.obj" ] || {
+  echo "!! compact-model clib missing under $LIBDIR" >&2
+  echo "   build it:  ( cd $CLIB && MODEL=c ./build-lib.sh )" >&2
   exit 1; }
 
 # owcc/wcc/wlink on PATH (env.sh symlinks a -bcpm86 owcc into a temp bindir).
@@ -80,33 +90,61 @@ OUT="${OUT:-$ROOT/out-cpm86}"
 mkdir -p "$OUT"
 
 INC="-I$B/hdr/dos/h -I$B/clib/h -I$B/clib/intel/h -I$B/watcom/h -I$B/lib_misc/h"
+# SMALL_MEM stays (it only sizes I/O buffers + selects the Far-string helpers,
+# it is NOT the compiler memory model); the model is set by -mcmodel=l.  With
+# __BIG_DATA__ (implied by -ml) malloc()/free() are the FAR-heap ones, so the
+# MALLOC_WORK slide window lands in the far heap.
 DEFS="-DFLEXOS -DMALLOC_WORK -DDYNALLOC_CRCTAB -DNO_ZIPINFO -DNO_DEFLATE64 \
 -DSMALL_MEM -DINBUFSIZ=512 \
+-DLZW_CLEAN -DCOPYRIGHT_CLEAN -DNO_IMPLODE \
 -Dzfmalloc=malloc -Dzffree=free"
-CFLAGS="-bcpm86 -march=i186 -mcmodel=s -Os"
+CFLAGS="-bcpm86 -march=i186 -mcmodel=c -Os"
+
+# Far-heap reservation for the linker's fallback marker.  BDOS-128 is the primary
+# allocator and grants each segment (incl. the 32 KB inflate window) from the OS
+# on demand, so a minimal reservation suffices; override FARHEAP to test the
+# static fallback.  (Same rationale as build-zip-cpm86.sh.)
+: "${FARHEAP:=0x1000}"
+FARHEAP_PARAS=$(( FARHEAP / 16 ))
 
 # UnZip core objects for a NO_ZIPINFO build, plus the CP/M-86 OS layer.
-CORE="unzip crc32 crypt envargs explode extract fileio globals inflate \
-list match process ttyio ubz2err unreduce unshrink apihelp"
+# The obsolete PKZIP-1.x decompressors (explode/unshrink/unreduce, i.e. the
+# implode/shrink/reduce methods) are DROPPED: they add ~7 KB of code that pushed
+# the compact-model single 64 KB code group over the limit (E2021), and modern
+# archives use only store + deflate.  LZW_CLEAN/COPYRIGHT_CLEAN (Info-ZIP flags)
+# remove the unshrink/unreduce call sites; NO_IMPLODE (our gate in extract.c)
+# removes the explode one.  Such an archive member reports an unsupported method.
+CORE="unzip crc32 crypt envargs extract fileio globals inflate \
+list match process ttyio ubz2err apihelp"
 
-echo "==> compiling UnZip for CP/M-86 (small model)"
+echo "==> compiling UnZip for CP/M-86 (compact model, farheap=${FARHEAP} = ${FARHEAP_PARAS} paras)"
 cd "$ROOT/src/unzip60"
-OBJS=""
+# cpm86.obj first so its seam definitions win the first-definition link rule.
+# shellcheck disable=SC2086
+owcc $CFLAGS $DEFS $INC -c cpm86/cpm86.c -o "$OUT/cpm86.obj"
+OBJS="file $OUT/cpm86.obj"
 for s in $CORE; do
   # shellcheck disable=SC2086
   owcc $CFLAGS $DEFS $INC -c "$s.c" -o "$OUT/$s.obj"
   OBJS="$OBJS file $OUT/$s.obj"
 done
+
+# farheap.c compiled with -DCPM86_FARHEAP_PARAS so __AllocSeg derives the full
+# G_MAX reservation on real CCP/M-86 (loader writes G_MIN to DS:0x0C); linked
+# BEFORE clibl.lib so it overrides the library fallback.  (Mirrors zip build.)
+PORTDIR="$OWROOT/contrib/ravn/watcom-cpm86-libc/port"
+PORTINC="-I$OWROOT/bld/clib/h -I$OWROOT/bld/clib/heap/h"
 # shellcheck disable=SC2086
-owcc $CFLAGS $DEFS $INC -c cpm86/cpm86.c -o "$OUT/cpm86.obj"
-OBJS="$OBJS file $OUT/cpm86.obj"
+owcc $CFLAGS $INC $PORTINC -DCPM86_FARHEAP_PARAS=$FARHEAP_PARAS \
+  -c "$PORTDIR/farheap.c" -o "$OUT/farheap.obj"
+OBJS="$OBJS file $OUT/farheap.obj"
 
 echo "==> linking UNZIP.CMD"
 WLINK="$B/wl/osxa64/wlink.exe"
 # shellcheck disable=SC2086
-"$WLINK" format cpm86 op dosseg,nodefaultlibs \
-  file "$LIBDIR/crt0.obj" $OBJS library "$LIBDIR/clibcpm.lib" \
-  name "$OUT/UNZIP.CMD"
+"$WLINK" format cpm86 op dosseg op start=_cstart_ op farheap=$FARHEAP \
+  op map="$OUT/unzip.map" \
+  name "$OUT/UNZIP.CMD" file "$LIBDIR/cstartcm.obj" $OBJS library "$LIBDIR/clibc.lib"
 
 cp "$OUT/UNZIP.CMD" "$ROOT/UNZIP.CMD"
 echo
